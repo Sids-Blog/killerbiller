@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,15 +6,32 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CreditCard, DollarSign } from "lucide-react";
+import { CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
+
+type BillStatus = "outstanding" | "partial" | "paid";
 
 interface Bill {
   id: string;
-  amount: number;
-  dueDate: string;
-  status: "outstanding" | "partial" | "paid";
-  paidAmount: number;
+  total_amount: number;
+  due_date: string;
+  status: BillStatus;
+  paid_amount: number;
+}
+
+interface Customer {
+  id: string;
+  name: string;
+  outstanding_balance: number;
+}
+
+interface Payment {
+    id: string;
+    amount: number;
+    created_at: string;
+    bills: { id: string; } | null;
+    customers: { name: string; } | null;
 }
 
 export const Payments = () => {
@@ -22,32 +39,73 @@ export const Payments = () => {
   const [selectedCustomer, setSelectedCustomer] = useState("");
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [selectedBills, setSelectedBills] = useState<string[]>([]);
+  
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerBills, setCustomerBills] = useState<Bill[]>([]);
+  const [recentPayments, setRecentPayments] = useState<Payment[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Placeholder data - will be replaced with Supabase data
-  const customers = [
-    { id: "1", name: "Tech Corp", outstanding: 3250.00 },
-    { id: "2", name: "Design Studio", outstanding: 1890.50 },
-    { id: "3", name: "StartupXYZ", outstanding: 4200.00 }
-  ];
+  const fetchCustomers = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("customers")
+      .select("id, name, outstanding_balance")
+      .eq('is_active', true)
+      .order("name");
+    
+    if (error) {
+      toast({ title: "Error fetching customers", description: error.message, variant: "destructive" });
+    } else {
+      setCustomers(data || []);
+    }
+    setLoading(false);
+  }, [toast]);
 
-  const customerBills: Record<string, Bill[]> = {
-    "1": [
-      { id: "B001", amount: 1250.00, dueDate: "2024-01-15", status: "outstanding", paidAmount: 0 },
-      { id: "B004", amount: 2000.00, dueDate: "2024-01-20", status: "outstanding", paidAmount: 0 }
-    ],
-    "2": [
-      { id: "B002", amount: 890.50, dueDate: "2024-01-14", status: "outstanding", paidAmount: 0 },
-      { id: "B005", amount: 1000.00, dueDate: "2024-01-18", status: "outstanding", paidAmount: 0 }
-    ],
-    "3": [
-      { id: "B003", amount: 2100.00, dueDate: "2024-01-13", status: "partial", paidAmount: 1000.00 },
-      { id: "B006", amount: 3100.00, dueDate: "2024-01-22", status: "outstanding", paidAmount: 0 }
-    ]
-  };
+  const fetchRecentPayments = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("payments")
+      .select(`
+        id,
+        amount,
+        created_at,
+        bills (id),
+        customers (name)
+      `)
+      .order("created_at", { ascending: false })
+      .limit(10);
 
-  const getSelectedCustomerBills = () => {
-    return selectedCustomer ? customerBills[selectedCustomer] || [] : [];
-  };
+    if (error) {
+      toast({ title: "Error fetching recent payments", description: error.message, variant: "destructive" });
+    } else {
+      setRecentPayments(data as Payment[] || []);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    fetchCustomers();
+    fetchRecentPayments();
+  }, [fetchCustomers, fetchRecentPayments]);
+
+  useEffect(() => {
+    const fetchCustomerBills = async () => {
+      if (!selectedCustomer) {
+        setCustomerBills([]);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("bills")
+        .select("*")
+        .eq("customer_id", selectedCustomer)
+        .in("status", ["outstanding", "partial"]);
+      
+      if (error) {
+        toast({ title: "Error fetching bills", description: error.message, variant: "destructive" });
+      } else {
+        setCustomerBills(data || []);
+      }
+    };
+    fetchCustomerBills();
+  }, [selectedCustomer, toast]);
 
   const handleBillSelection = (billId: string, checked: boolean) => {
     if (checked) {
@@ -58,39 +116,37 @@ export const Payments = () => {
   };
 
   const getTotalSelected = () => {
-    const bills = getSelectedCustomerBills();
     return selectedBills.reduce((total, billId) => {
-      const bill = bills.find(b => b.id === billId);
-      return total + (bill ? (bill.amount - bill.paidAmount) : 0);
+      const bill = customerBills.find(b => b.id === billId);
+      return total + (bill ? (bill.total_amount - bill.paid_amount) : 0);
     }, 0);
   };
 
   const processPayment = async () => {
     if (!selectedCustomer || selectedBills.length === 0 || paymentAmount <= 0) {
-      toast({
-        title: "Error",
-        description: "Please select customer, bills, and enter payment amount",
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Please select customer, bills, and enter payment amount", variant: "destructive" });
       return;
     }
 
-    // TODO: Replace with actual Supabase call
-    console.log("Processing payment:", {
-      customerId: selectedCustomer,
-      billIds: selectedBills,
-      amount: paymentAmount
+    // Note: For production, these operations should be wrapped in a single transaction 
+    // using a Supabase Edge Function to ensure data consistency.
+    const { error } = await supabase.rpc('process_payment', {
+      p_customer_id: selectedCustomer,
+      p_payment_amount: paymentAmount,
+      p_bill_ids: selectedBills
     });
 
-    toast({
-      title: "Success",
-      description: `Payment of $${paymentAmount} processed successfully`
-    });
-
-    // Reset form
-    setSelectedCustomer("");
-    setSelectedBills([]);
-    setPaymentAmount(0);
+    if (error) {
+      toast({ title: "Error processing payment", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Success", description: `Payment of ₹${paymentAmount} processed successfully` });
+      // Reset form and refetch data
+      setSelectedCustomer("");
+      setSelectedBills([]);
+      setPaymentAmount(0);
+      fetchCustomers();
+      fetchRecentPayments();
+    }
   };
 
   return (
@@ -115,7 +171,7 @@ export const Payments = () => {
               <Select value={selectedCustomer} onValueChange={(value) => {
                 setSelectedCustomer(value);
                 setSelectedBills([]);
-              }}>
+              }} disabled={loading}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select customer" />
                 </SelectTrigger>
@@ -125,7 +181,7 @@ export const Payments = () => {
                       <div className="flex justify-between w-full">
                         <span>{customer.name}</span>
                         <span className="text-muted-foreground">
-                          ${customer.outstanding.toFixed(2)} outstanding
+                          ₹{customer.outstanding_balance.toFixed(2)} outstanding
                         </span>
                       </div>
                     </SelectItem>
@@ -138,7 +194,7 @@ export const Payments = () => {
               <div className="space-y-3">
                 <Label>Outstanding Bills</Label>
                 <div className="border rounded-lg p-3 space-y-2 max-h-60 overflow-y-auto">
-                  {getSelectedCustomerBills().map((bill) => (
+                  {customerBills.map((bill) => (
                     <div key={bill.id} className="flex items-center space-x-3 p-2 hover:bg-muted rounded">
                       <Checkbox
                         id={bill.id}
@@ -147,14 +203,14 @@ export const Payments = () => {
                       />
                       <div className="flex-1">
                         <div className="flex justify-between items-center">
-                          <span className="font-medium">{bill.id}</span>
+                          <span className="font-medium">Bill #{bill.id.substring(0, 5)}</span>
                           <Badge variant={bill.status === 'outstanding' ? 'destructive' : 'secondary'}>
                             {bill.status}
                           </Badge>
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          Due: {bill.dueDate} | 
-                          Remaining: ${(bill.amount - bill.paidAmount).toFixed(2)}
+                          Due: {new Date(bill.due_date).toLocaleDateString()} | 
+                          Remaining: ₹{(bill.total_amount - bill.paid_amount).toFixed(2)}
                         </div>
                       </div>
                     </div>
@@ -175,7 +231,7 @@ export const Payments = () => {
               />
               {selectedBills.length > 0 && (
                 <p className="text-sm text-muted-foreground">
-                  Total selected: ${getTotalSelected().toFixed(2)}
+                  Total selected: ₹{getTotalSelected().toFixed(2)}
                 </p>
               )}
             </div>
@@ -183,7 +239,7 @@ export const Payments = () => {
             <Button 
               onClick={processPayment} 
               className="w-full"
-              disabled={!selectedCustomer || selectedBills.length === 0 || paymentAmount <= 0}
+              disabled={!selectedCustomer || selectedBills.length === 0 || paymentAmount <= 0 || loading}
             >
               Process Payment
             </Button>
@@ -194,7 +250,7 @@ export const Payments = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
+              <span className="font-bold text-lg">₹</span>
               Customer Balances
             </CardTitle>
           </CardHeader>
@@ -204,12 +260,9 @@ export const Payments = () => {
                 <div key={customer.id} className="p-4 bg-muted rounded-lg">
                   <div className="flex justify-between items-center mb-2">
                     <h3 className="font-medium">{customer.name}</h3>
-                    <Badge variant={customer.outstanding > 0 ? "destructive" : "default"}>
-                      ${customer.outstanding.toFixed(2)}
+                    <Badge variant={customer.outstanding_balance > 0 ? "destructive" : "default"}>
+                      ₹{customer.outstanding_balance.toFixed(2)}
                     </Badge>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {customerBills[customer.id]?.length || 0} outstanding bills
                   </div>
                 </div>
               ))}
@@ -224,9 +277,29 @@ export const Payments = () => {
           <CardTitle>Recent Payments</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center py-8 text-muted-foreground">
-            Payment history will appear here once connected to Supabase
-          </div>
+          {recentPayments.length > 0 ? (
+            <div className="space-y-3">
+              {recentPayments.map(payment => (
+                <div key={payment.id} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                  <div>
+                    <p className="font-medium">
+                      {payment.customers?.name || 'N/A'} paid ₹{payment.amount.toFixed(2)}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {new Date(payment.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <Badge variant="outline">
+                    Bill #{payment.bills?.id.substring(0,5) || 'N/A'}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              No recent payments
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
