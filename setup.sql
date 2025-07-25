@@ -238,12 +238,12 @@ RETURNS TABLE(
 BEGIN
   RETURN QUERY
   SELECT
-    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'revenue' AND created_at >= now() - interval '1 day') as daily_revenue,
-    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'revenue' AND created_at >= now() - interval '7 days') as weekly_revenue,
-    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'revenue' AND created_at >= now() - interval '30 days') as monthly_revenue,
-    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND created_at >= now() - interval '1 day') as daily_expense,
-    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND created_at >= now() - interval '7 days') as weekly_expense,
-    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND created_at >= now() - interval '30 days') as monthly_expense;
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'revenue' AND date_of_transaction >= now() - interval '1 day') as daily_revenue,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'revenue' AND date_of_transaction >= now() - interval '7 days') as weekly_revenue,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'revenue' AND date_of_transaction >= now() - interval '30 days') as monthly_revenue,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND date_of_transaction >= now() - interval '1 day') as daily_expense,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND date_of_transaction >= now() - interval '7 days') as weekly_expense,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND date_of_transaction >= now() - interval '30 days') as monthly_expense;
 END;
 $$ LANGUAGE plpgsql;
 
