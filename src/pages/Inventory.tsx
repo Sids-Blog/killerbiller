@@ -21,9 +21,14 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Package, AlertTriangle } from "lucide-react";
+import { Plus, Package, AlertTriangle, ChevronsUpDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Calendar } from "@/components/ui/calendar";
+import { format, startOfMonth, endOfMonth } from "date-fns";
+import { DateRange } from "react-day-picker";
 
 interface InventoryItem {
   id: string;
@@ -60,13 +65,23 @@ export const Inventory = () => {
   const [comments, setComments] = useState("");
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [products, setProducts] = useState<Product[]>([]); // Will now hold filtered products
+  const [products, setProducts] = useState<Product[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [newQuantity, setNewQuantity] = useState(0);
+
+  // Filters
+  const [productFilter, setProductFilter] = useState("all");
+  const [vendorFilter, setVendorFilter] = useState("all");
+  const [vendorSearchOpen, setVendorSearchOpen] = useState(false);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: startOfMonth(new Date()),
+    to: endOfMonth(new Date()),
+  });
 
   const fetchInitialData = useCallback(async () => {
     setLoading(true);
@@ -75,21 +90,30 @@ export const Inventory = () => {
       products (id, name, price, min_stock)
     `);
     const vendorsPromise = supabase.from("customers").select("id, name").eq("type", "vendor").order("name", { ascending: true });
-    const transactionsPromise = supabase.from("inventory_transactions").select(`
+    const allProductsPromise = supabase.from("products").select("id, name").order("name", { ascending: true });
+    
+    let transactionsQuery = supabase.from("inventory_transactions").select(`
       id, created_at, quantity_change, comments,
       products (name),
       customers (name)
-    `).order("created_at", { ascending: false });
+    `);
+
+    if (productFilter !== "all") transactionsQuery = transactionsQuery.eq('product_id', productFilter);
+    if (vendorFilter !== "all") transactionsQuery = transactionsQuery.eq('vendor_id', vendorFilter);
+    if (dateRange?.from) transactionsQuery = transactionsQuery.gte('created_at', dateRange.from.toISOString());
+    if (dateRange?.to) transactionsQuery = transactionsQuery.lte('created_at', dateRange.to.toISOString());
+
+    const transactionsPromise = transactionsQuery.order("created_at", { ascending: false });
 
     const [
       inventoryRes,
       vendorsRes,
-      transactionsRes
-    ] = await Promise.all([inventoryPromise, vendorsPromise, transactionsPromise]);
+      transactionsRes,
+      allProductsRes
+    ] = await Promise.all([inventoryPromise, vendorsPromise, transactionsPromise, allProductsPromise]);
 
-    if (inventoryRes.error) {
-      toast({ title: "Error fetching inventory", description: inventoryRes.error.message, variant: "destructive" });
-    } else {
+    if (inventoryRes.error) toast({ title: "Error fetching inventory", description: inventoryRes.error.message, variant: "destructive" });
+    else {
       const formattedData = inventoryRes.data.map((item: any) => ({
         id: item.products.id,
         name: item.products.name,
@@ -100,20 +124,17 @@ export const Inventory = () => {
       setInventory(formattedData);
     }
 
-    if (vendorsRes.error) {
-      toast({ title: "Error fetching vendors", description: vendorsRes.error.message, variant: "destructive" });
-    } else {
-      setVendors(vendorsRes.data || []);
-    }
+    if (vendorsRes.error) toast({ title: "Error fetching vendors", description: vendorsRes.error.message, variant: "destructive" });
+    else setVendors(vendorsRes.data || []);
 
-    if (transactionsRes.error) {
-      toast({ title: "Error fetching transactions", description: transactionsRes.error.message, variant: "destructive" });
-    } else {
-      setTransactions(transactionsRes.data as Transaction[]);
-    }
+    if (transactionsRes.error) toast({ title: "Error fetching transactions", description: transactionsRes.error.message, variant: "destructive" });
+    else setTransactions(transactionsRes.data as Transaction[]);
+
+    if (allProductsRes.error) toast({ title: "Error fetching all products", description: allProductsRes.error.message, variant: "destructive" });
+    else setAllProducts(allProductsRes.data || []);
 
     setLoading(false);
-  }, [toast]);
+  }, [toast, productFilter, vendorFilter, dateRange]);
 
   useEffect(() => {
     fetchInitialData();
@@ -148,30 +169,19 @@ export const Inventory = () => {
 
   const submitStock = async () => {
     if (!selectedProduct || !selectedVendor || quantity <= 0) {
-      toast({
-        title: "Error",
-        description: "Please select a vendor, a product, and enter a valid quantity.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Please select a vendor, a product, and enter a valid quantity.", variant: "destructive" });
       return;
     }
 
-    const { error } = await supabase.rpc("increment_stock", {
-      p_product_id: selectedProduct,
-      p_quantity: quantity,
-      p_vendor_id: selectedVendor,
-      p_comments: comments,
-    });
-
-    if (error) {
-      toast({ title: "Error updating stock", description: error.message, variant: "destructive" });
-    } else {
+    const { error } = await supabase.rpc("increment_stock", { p_product_id: selectedProduct, p_quantity: quantity, p_vendor_id: selectedVendor, p_comments: comments });
+    if (error) toast({ title: "Error updating stock", description: error.message, variant: "destructive" });
+    else {
       toast({ title: "Success", description: "Stock updated successfully." });
       setSelectedProduct("");
       setSelectedVendor("");
       setQuantity(1);
       setComments("");
-      fetchInitialData(); // Refetch all data to update inventory and transactions
+      fetchInitialData();
     }
   };
 
@@ -180,15 +190,9 @@ export const Inventory = () => {
       toast({ title: "Error", description: "Quantity cannot be negative.", variant: "destructive" });
       return;
     }
-
-    const { error } = await supabase
-      .from("inventory")
-      .update({ quantity: newQuantity })
-      .eq("product_id", productId);
-
-    if (error) {
-      toast({ title: "Error updating stock", description: error.message, variant: "destructive" });
-    } else {
+    const { error } = await supabase.from("inventory").update({ quantity: newQuantity }).eq("product_id", productId);
+    if (error) toast({ title: "Error updating stock", description: error.message, variant: "destructive" });
+    else {
       toast({ title: "Success", description: "Stock updated successfully." });
       fetchInitialData();
       setEditingItemId(null);
@@ -233,17 +237,11 @@ export const Inventory = () => {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="vendor">Vendor</Label>
-                <Select value={selectedVendor} onValueChange={setSelectedVendor}>
-                  <SelectTrigger><SelectValue placeholder="Select vendor first" /></SelectTrigger>
-                  <SelectContent>{vendors.map((v) => (<SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>))}</SelectContent>
-                </Select>
+                <Select value={selectedVendor} onValueChange={setSelectedVendor}><SelectTrigger><SelectValue placeholder="Select vendor first" /></SelectTrigger><SelectContent>{vendors.map((v) => (<SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>))}</SelectContent></Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="product">Product</Label>
-                <Select value={selectedProduct} onValueChange={setSelectedProduct} disabled={!selectedVendor || loadingProducts}>
-                  <SelectTrigger><SelectValue placeholder={loadingProducts ? "Loading products..." : "Select product"} /></SelectTrigger>
-                  <SelectContent>{products.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}</SelectContent>
-                </Select>
+                <Select value={selectedProduct} onValueChange={setSelectedProduct} disabled={!selectedVendor || loadingProducts}><SelectTrigger><SelectValue placeholder={loadingProducts ? "Loading products..." : "Select product"} /></SelectTrigger><SelectContent>{products.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}</SelectContent></Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="quantity">Quantity to Add</Label>
@@ -297,32 +295,62 @@ export const Inventory = () => {
           <Card className="mt-4">
             <CardHeader><CardTitle>Inventory Transactions</CardTitle></CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Comments</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow><TableCell colSpan={5} className="text-center">Loading...</TableCell></TableRow>
-                  ) : (
-                    transactions.map(tx => (
-                      <TableRow key={tx.id}>
-                        <TableCell>{tx.products?.name || 'N/A'}</TableCell>
-                        <TableCell>{tx.customers?.name || 'N/A'}</TableCell>
-                        <TableCell>{tx.quantity_change}</TableCell>
-                        <TableCell>{new Date(tx.created_at).toLocaleString()}</TableCell>
-                        <TableCell>{tx.comments || '-'}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+              <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                <Select value={productFilter} onValueChange={setProductFilter}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Filter by product" /></SelectTrigger><SelectContent><SelectItem value="all">All Products</SelectItem>{allProducts.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select>
+                <Popover open={vendorSearchOpen} onOpenChange={setVendorSearchOpen}>
+                    <PopoverTrigger asChild>
+                        <Button variant="outline" role="combobox" aria-expanded={vendorSearchOpen} className="w-full sm:w-[200px] justify-between">
+                            {vendorFilter !== "all" ? vendors.find((v) => v.id === vendorFilter)?.name : "Select vendor..."}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[200px] p-0">
+                        <Command>
+                            <CommandInput placeholder="Search vendor..." />
+                            <CommandList>
+                                <CommandEmpty>No vendor found.</CommandEmpty>
+                                <CommandGroup>
+                                    <CommandItem value="all" onSelect={() => {setVendorFilter("all"); setVendorSearchOpen(false);}}>All Vendors</CommandItem>
+                                    {vendors.map((v) => (
+                                        <CommandItem key={v.id} value={v.name} onSelect={() => {setVendorFilter(v.id); setVendorSearchOpen(false);}}>
+                                            {v.name}
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            </CommandList>
+                        </Command>
+                    </PopoverContent>
+                </Popover>
+                <Popover><PopoverTrigger asChild><Button variant={"outline"} className="w-full sm:w-auto justify-start text-left font-normal">{dateRange?.from ? (dateRange.to ? `${format(dateRange.from, "LLL dd, y")} - ${format(dateRange.to, "LLL dd, y")}` : format(dateRange.from, "LLL dd, y")) : <span>Pick a date range</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar initialFocus mode="range" defaultMonth={dateRange?.from} selected={dateRange} onSelect={setDateRange} numberOfMonths={2} /></PopoverContent></Popover>
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead>Quantity</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Comments</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow><TableCell colSpan={5} className="text-center">Loading...</TableCell></TableRow>
+                    ) : (
+                      transactions.map(tx => (
+                        <TableRow key={tx.id}>
+                          <TableCell>{tx.products?.name || 'N/A'}</TableCell>
+                          <TableCell>{tx.customers?.name || 'N/A'}</TableCell>
+                          <TableCell>{tx.quantity_change}</TableCell>
+                          <TableCell>{new Date(tx.created_at).toLocaleString()}</TableCell>
+                          <TableCell>{tx.comments || '-'}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

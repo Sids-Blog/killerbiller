@@ -15,7 +15,10 @@ import {
   Loader2,
   IndianRupee,
   TrendingUp,
-  Receipt
+  Receipt,
+  TrendingDown,
+  CalendarDays,
+  CalendarIcon
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
@@ -40,6 +43,11 @@ interface DashboardStats {
   monthly_revenue: number;
   outstanding_bills: number;
   low_stock_items: number;
+  daily_revenue: number;
+  weekly_revenue: number;
+  daily_expense: number;
+  weekly_expense: number;
+  monthly_expense: number;
 }
 
 export const Dashboard = () => {
@@ -53,6 +61,7 @@ export const Dashboard = () => {
     setLoading(true);
     
     const statsPromise = supabase.rpc('get_dashboard_stats');
+    const extendedStatsPromise = supabase.rpc('get_extended_dashboard_stats');
     const productPromise = supabase.from("products").select("*");
     const inventoryPromise = supabase.from("inventory").select("product_id, quantity");
     const customerPromise = supabase
@@ -61,17 +70,18 @@ export const Dashboard = () => {
       .gt("outstanding_balance", 0)
       .order("outstanding_balance", { ascending: false });
 
-    const [statsRes, productRes, inventoryRes, customerRes] = await Promise.all([
+    const [statsRes, extendedStatsRes, productRes, inventoryRes, customerRes] = await Promise.all([
       statsPromise,
+      extendedStatsPromise,
       productPromise,
       inventoryPromise,
       customerPromise,
     ]);
 
-    if (statsRes.error) {
-      toast({ title: "Error fetching dashboard stats", description: statsRes.error.message, variant: "destructive" });
+    if (statsRes.error || extendedStatsRes.error) {
+      toast({ title: "Error fetching dashboard stats", description: statsRes.error?.message || extendedStatsRes.error?.message, variant: "destructive" });
     } else {
-      setStats(statsRes.data[0]);
+      setStats({ ...statsRes.data[0], ...extendedStatsRes.data[0] });
     }
 
     if (productRes.error) {
@@ -116,57 +126,129 @@ export const Dashboard = () => {
         <p className="text-muted-foreground">Overview of your inventory and billing</p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Receivables</CardTitle>
-            <IndianRupee className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">₹{(stats.total_receivables || 0).toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              Amount to be collected
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">₹{(stats.monthly_revenue || 0).toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">
-              Revenue this month
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Outstanding Bills</CardTitle>
-            <Receipt className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.outstanding_bills || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              Unpaid or partially paid bills
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-warning" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-warning">{stats.low_stock_items || 0}</div>
-            <p className="text-xs text-muted-foreground">
-              Products needing restock
-            </p>
-          </CardContent>
-        </Card>
+      {/* Revenue & Expense Grid */}
+      <div className="space-y-4">
+        <h2 className="text-2xl font-bold text-foreground">Financial Overview</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Daily Revenue</CardTitle>
+                <IndianRupee className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold">₹{(stats.daily_revenue || 0).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                Today's earnings
+                </p>
+            </CardContent>
+            </Card>
+            <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Weekly Revenue</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold">₹{(stats.weekly_revenue || 0).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                Last 7 days
+                </p>
+            </CardContent>
+            </Card>
+            <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold">₹{(stats.monthly_revenue || 0).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                Revenue this month
+                </p>
+            </CardContent>
+            </Card>
+            <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Daily Expense</CardTitle>
+                <TrendingDown className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold">₹{(stats.daily_expense || 0).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                Today's spending
+                </p>
+            </CardContent>
+            </Card>
+            <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Weekly Expense</CardTitle>
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold">₹{(stats.weekly_expense || 0).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                Last 7 days
+                </p>
+            </CardContent>
+            </Card>
+            <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Monthly Expense</CardTitle>
+                <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold">₹{(stats.monthly_expense || 0).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                Last 30 days
+                </p>
+            </CardContent>
+            </Card>
+        </div>
       </div>
+
+
+      {/* Operational Stats Grid */}
+      <div className="space-y-4">
+        <h2 className="text-2xl font-bold text-foreground">Operational Stats</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Receivables</CardTitle>
+                <IndianRupee className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold">₹{(stats.total_receivables || 0).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                Amount to be collected
+                </p>
+            </CardContent>
+            </Card>
+            <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Outstanding Bills</CardTitle>
+                <Receipt className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold">{stats.outstanding_bills || 0}</div>
+                <p className="text-xs text-muted-foreground">
+                Unpaid or partially paid bills
+                </p>
+            </CardContent>
+            </Card>
+            <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
+                <AlertTriangle className="h-4 w-4 text-warning" />
+            </CardHeader>
+            <CardContent>
+                <div className="text-2xl font-bold text-warning">{stats.low_stock_items || 0}</div>
+                <p className="text-xs text-muted-foreground">
+                Products needing restock
+                </p>
+            </CardContent>
+            </Card>
+        </div>
+      </div>
+
 
       {/* Product Scorecards */}
       <div className="space-y-4">

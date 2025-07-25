@@ -1,4 +1,6 @@
--- Create Customers table
+-- This is a consolidated setup file reflecting the final database schema.
+
+-- Create Customers table (for both customers and vendors)
 CREATE TABLE customers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
@@ -18,7 +20,7 @@ CREATE TABLE customers (
 CREATE TABLE products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
-  price NUMERIC(10, 2) NOT NULL, -- Price per unit, calculated from lot
+  price NUMERIC(10, 2) NOT NULL, -- Price per unit
   lot_size INTEGER DEFAULT 1,
   lot_price NUMERIC(10, 2) DEFAULT 0.00,
   min_stock INTEGER DEFAULT 0,
@@ -44,7 +46,8 @@ CREATE TABLE bills (
   due_date DATE DEFAULT now() + interval '30 days',
   discount NUMERIC(10, 2) DEFAULT 0.00,
   comments TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  date_of_bill TIMESTAMPTZ DEFAULT now()
 );
 
 -- Create Bill Items table
@@ -56,14 +59,57 @@ CREATE TABLE bill_items (
   price NUMERIC(10, 2) NOT NULL
 );
 
--- Create Payments table
-CREATE TABLE payments (
+-- Create Orders table
+CREATE TABLE orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  bill_id UUID REFERENCES bills(id) ON DELETE SET NULL,
   customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
-  amount NUMERIC(10, 2) NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending, fulfilled
+  comments TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Create Order Items table
+CREATE TABLE order_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  lots INTEGER,
+  units INTEGER
+);
+
+-- Create Inventory Transactions table (for logging stock changes)
+CREATE TABLE inventory_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE NOT NULL,
+  vendor_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+  quantity_change INTEGER NOT NULL,
+  comments TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Create Expense Categories table
+CREATE TABLE expense_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Create unified Transactions table (for revenue and expenses)
+CREATE TABLE transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  amount NUMERIC(10, 2) NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('revenue', 'expense')),
+  description TEXT,
+  bill_id UUID REFERENCES bills(id) ON DELETE SET NULL,
+  customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+  vendor_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+  category_id UUID REFERENCES expense_categories(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  date_of_transaction TIMESTAMPTZ DEFAULT now()
+);
+
+
+-- === DATABASE FUNCTIONS ===
 
 -- Function to decrement stock
 CREATE OR REPLACE FUNCTION decrement_stock(p_product_id UUID, p_quantity INTEGER)
@@ -85,8 +131,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to process a payment
-CREATE OR REPLACE FUNCTION process_payment(p_customer_id UUID, p_payment_amount NUMERIC, p_bill_ids UUID[])
+-- Function to increment stock
+CREATE OR REPLACE FUNCTION increment_stock(p_product_id UUID, p_quantity INTEGER, p_vendor_id UUID, p_comments TEXT)
+RETURNS VOID AS $$
+BEGIN
+  -- Add the transaction to the log
+  INSERT INTO inventory_transactions (product_id, quantity_change, vendor_id, comments)
+  VALUES (p_product_id, p_quantity, p_vendor_id, p_comments);
+
+  -- Update the main inventory table
+  UPDATE inventory
+  SET quantity = quantity + p_quantity, updated_at = now()
+  WHERE product_id = p_product_id;
+
+  -- If the product is not in the inventory table, insert it.
+  IF NOT FOUND THEN
+    INSERT INTO inventory (product_id, quantity)
+    VALUES (p_product_id, p_quantity);
+  END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to process a payment (collection)
+CREATE OR REPLACE FUNCTION process_payment(p_customer_id UUID, p_payment_amount NUMERIC, p_bill_ids UUID[], p_date_of_transaction TIMESTAMPTZ)
 RETURNS VOID AS $$
 DECLARE
   bill_record RECORD;
@@ -116,8 +183,8 @@ BEGIN
       SET paid_amount = total_amount, status = 'paid'
       WHERE id = bill_record.id;
 
-      INSERT INTO payments (bill_id, customer_id, amount)
-      VALUES (bill_record.id, p_customer_id, payable_amount);
+      INSERT INTO transactions (bill_id, customer_id, amount, type, description, date_of_transaction)
+      VALUES (bill_record.id, p_customer_id, payable_amount, 'revenue', 'Payment for Bill #' || bill_record.id::text, p_date_of_transaction);
 
       payment_left := payment_left - payable_amount;
     ELSE
@@ -126,8 +193,8 @@ BEGIN
       SET paid_amount = paid_amount + payment_left, status = 'partial'
       WHERE id = bill_record.id;
 
-      INSERT INTO payments (bill_id, customer_id, amount)
-      VALUES (bill_record.id, p_customer_id, payment_left);
+      INSERT INTO transactions (bill_id, customer_id, amount, type, description, date_of_transaction)
+      VALUES (bill_record.id, p_customer_id, payment_left, 'revenue', 'Partial payment for Bill #' || bill_record.id::text, p_date_of_transaction);
 
       payment_left := 0;
     END IF;
@@ -135,9 +202,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to get dashboard stats
+-- Function to record an expense
+CREATE OR REPLACE FUNCTION record_expense(p_amount NUMERIC, p_vendor_id UUID, p_category_id UUID, p_comments TEXT, p_date_of_transaction TIMESTAMPTZ)
+RETURNS VOID AS $$
+BEGIN
+  INSERT INTO transactions (amount, vendor_id, category_id, description, type, date_of_transaction)
+  VALUES (p_amount, p_vendor_id, p_category_id, p_comments, 'expense', p_date_of_transaction);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to get main dashboard stats
 CREATE OR REPLACE FUNCTION get_dashboard_stats()
-RETURNS TABLE(total_products BIGINT, low_stock_items BIGINT, outstanding_bills BIGINT, total_receivables NUMERIC, monthly_revenue NUMERIC, pending_payments BIGINT) AS $$
+RETURNS TABLE(total_products BIGINT, low_stock_items BIGINT, outstanding_bills BIGINT, total_receivables NUMERIC, monthly_revenue NUMERIC) AS $$
 BEGIN
   RETURN QUERY
   SELECT
@@ -145,69 +221,69 @@ BEGIN
     (SELECT count(*) FROM inventory i JOIN products p ON i.product_id = p.id WHERE i.quantity <= p.min_stock) as low_stock_items,
     (SELECT count(*) FROM bills WHERE status IN ('outstanding', 'partial')) as outstanding_bills,
     (SELECT sum(total_amount - paid_amount) FROM bills WHERE status IN ('outstanding', 'partial')) as total_receivables,
-    (SELECT sum(amount) FROM payments WHERE created_at >= date_trunc('month', now())) as monthly_revenue,
-    (SELECT count(*) FROM payments WHERE bill_id IS NULL) as pending_payments;
+    (SELECT sum(amount) FROM transactions WHERE type = 'revenue' AND created_at >= date_trunc('month', now())) as monthly_revenue;
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to get low stock products
-CREATE OR REPLACE FUNCTION get_low_stock_products()
-RETURNS TABLE(name TEXT, quantity INTEGER, min_stock INTEGER) AS $$
+-- Function to get extended dashboard stats (revenue and expenses)
+CREATE OR REPLACE FUNCTION get_extended_dashboard_stats()
+RETURNS TABLE(
+    daily_revenue NUMERIC,
+    weekly_revenue NUMERIC,
+    monthly_revenue NUMERIC,
+    daily_expense NUMERIC,
+    weekly_expense NUMERIC,
+    monthly_expense NUMERIC
+) AS $$
 BEGIN
   RETURN QUERY
-  SELECT p.name, i.quantity, p.min_stock
-  FROM inventory i
-  JOIN products p ON i.product_id = p.id
-  WHERE i.quantity <= p.min_stock;
+  SELECT
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'revenue' AND created_at >= now() - interval '1 day') as daily_revenue,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'revenue' AND created_at >= now() - interval '7 days') as weekly_revenue,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'revenue' AND created_at >= now() - interval '30 days') as monthly_revenue,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND created_at >= now() - interval '1 day') as daily_expense,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND created_at >= now() - interval '7 days') as weekly_expense,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND created_at >= now() - interval '30 days') as monthly_expense;
 END;
 $$ LANGUAGE plpgsql;
 
--- Enable Row Level Security
+
+-- === ROW LEVEL SECURITY (RLS) ===
+
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bill_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE expense_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 
--- Create Inventory Transactions table
-CREATE TABLE inventory_transactions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id UUID REFERENCES products(id) ON DELETE CASCADE NOT NULL,
-  vendor_id UUID REFERENCES customers(id) ON DELETE SET NULL,
-  quantity_change INTEGER NOT NULL,
-  comments TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Function to increment stock
-CREATE OR REPLACE FUNCTION increment_stock(p_product_id UUID, p_quantity INTEGER, p_vendor_id UUID, p_comments TEXT)
-RETURNS VOID AS $
-BEGIN
-  -- Add the transaction to the log
-  INSERT INTO inventory_transactions (product_id, quantity_change, vendor_id, comments)
-  VALUES (p_product_id, p_quantity, p_vendor_id, p_comments);
-
-  -- Update the main inventory table
-  UPDATE inventory
-  SET quantity = quantity + p_quantity, updated_at = now()
-  WHERE product_id = p_product_id;
-
-  -- If the product is not in the inventory table, insert it.
-  IF NOT FOUND THEN
-    INSERT INTO inventory (product_id, quantity)
-    VALUES (p_product_id, p_quantity);
-  END IF;
-END;
-$ LANGUAGE plpgsql;
-
-
--- Policies (assuming you have a system where users are associated with their data)
--- These are placeholder policies. You'll need to adapt them to your authentication setup.
--- For example, if you have a user_id in each table linked to auth.users().
+-- Note: These are placeholder policies. Adapt them to your authentication setup.
 CREATE POLICY "Allow all access to all users" ON customers FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to all users" ON products FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to all users" ON inventory FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to all users" ON bills FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to all users" ON bill_items FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all access to all users" ON payments FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to all users" ON orders FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to all users" ON order_items FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to all users" ON inventory_transactions FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to all users" ON expense_categories FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to all users" ON transactions FOR ALL USING (true) WITH CHECK (true);
+
+
+-- === INDEXES for Performance ===
+
+CREATE INDEX idx_customers_name ON customers(name);
+CREATE INDEX idx_products_name ON products(name);
+CREATE INDEX idx_bills_customer_id ON bills(customer_id);
+CREATE INDEX idx_bills_status ON bills(status);
+CREATE INDEX idx_bill_items_bill_id ON bill_items(bill_id);
+CREATE INDEX idx_orders_customer_id ON orders(customer_id);
+CREATE INDEX idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX idx_transactions_type ON transactions(type);
+CREATE INDEX idx_transactions_vendor_id ON transactions(vendor_id);
+CREATE INDEX idx_transactions_category_id ON transactions(category_id);
+CREATE INDEX idx_transactions_customer_id ON transactions(customer_id);
