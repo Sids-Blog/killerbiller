@@ -77,7 +77,7 @@ export const Payments = () => {
     if (error) {
       toast({ title: "Error fetching recent payments", description: error.message, variant: "destructive" });
     } else {
-      setRecentPayments(data as Payment[] || []);
+      setRecentPayments(data || []);
     }
   }, [toast]);
 

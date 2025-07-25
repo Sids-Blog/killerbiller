@@ -130,7 +130,7 @@ export const Products = () => {
       return;
     }
 
-    const { category, ...dataToSave } = {
+    const dataToSave = {
       ...formData,
       price: formData.lot_price / formData.lot_size,
     };
