@@ -22,7 +22,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Trash2, Plus, Download, CalendarIcon } from "lucide-react";
+import { Trash2, Plus, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import jsPDF from "jspdf";
@@ -227,12 +227,119 @@ export const Billing = () => {
 
   const total = useMemo(() => billItems.reduce((sum, item) => sum + item.quantity * item.price, 0), [billItems]);
 
-  const generatePdf = (billDetails: any, items: any[], customerDetails: any) => {
-    // PDF generation logic remains the same
+  const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Customer) => {
+    const doc = new jsPDF();
+
+    // Bill Header
+    doc.setFontSize(20);
+    doc.text("Bill/Invoice", 105, 20, { align: "center" });
+
+    // Customer Details
+    doc.setFontSize(12);
+    doc.text(`Bill To: ${customerDetails.name}`, 14, 40);
+    doc.text(`Address: ${customerDetails.address}`, 14, 48);
+    doc.text(`Phone: ${customerDetails.primary_phone_number}`, 14, 56);
+    if (customerDetails.gst_number) {
+      doc.text(`GSTIN: ${customerDetails.gst_number}`, 14, 64);
+    }
+
+    // Bill Details
+    doc.text(`Bill ID: #${billDetails.id.slice(0, 13)}`, 196, 40, { align: "right" });
+    doc.text(`Date: ${new Date(billDetails.date_of_bill).toLocaleDateString()}`, 196, 48, { align: "right" });
+
+    // Bill Items Table
+    autoTable(doc, {
+      startY: 75,
+      head: [['Product', 'Quantity', 'Price/Unit', 'Total']],
+      body: items.map(item => [
+        item.product_name,
+        item.quantity,
+        `₹${item.price.toFixed(2)}`,
+        `₹${(item.quantity * item.price).toFixed(2)}`
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [38, 38, 38] },
+    });
+
+    // Totals
+    const finalY = (doc as any).lastAutoTable.finalY;
+    const subtotal = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
+    const discount = billDetails.discount || 0;
+    const grandTotal = subtotal - discount;
+
+    doc.setFontSize(12);
+    doc.text(`Subtotal:`, 150, finalY + 10, { align: "right" });
+    doc.text(`₹${subtotal.toFixed(2)}`, 196, finalY + 10, { align: "right" });
+    doc.text(`Discount:`, 150, finalY + 17, { align: "right" });
+    doc.text(`- ₹${discount.toFixed(2)}`, 196, finalY + 17, { align: "right" });
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Grand Total:`, 150, finalY + 25, { align: "right" });
+    doc.text(`₹${grandTotal.toFixed(2)}`, 196, finalY + 25, { align: "right" });
+
+    // Comments
+    if (billDetails.comments) {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Comments:', 14, finalY + 40);
+        const splitComments = doc.splitTextToSize(billDetails.comments, 182);
+        doc.text(splitComments, 14, finalY + 45);
+    }
+
+    // Footer
+    doc.setFontSize(10);
+    doc.text("Thank you for your business!", 105, 280, { align: "center" });
+
+
+    doc.save(`bill_${billDetails.id}.pdf`);
   };
 
   const handleDownloadPdf = async (billId: string) => {
-    // PDF download logic remains the same
+    setLoading(true);
+    const { data: billDetails, error: billError } = await supabase
+      .from('bills')
+      .select('*, customers(*)')
+      .eq('id', billId)
+      .single();
+
+    if (billError || !billDetails) {
+      toast({ title: "Error fetching bill details", description: billError?.message, variant: "destructive" });
+      setLoading(false);
+      return;
+    }
+
+    const { data: billItemsData, error: itemsError } = await supabase
+      .from('bill_items')
+      .select('*, products(name)')
+      .eq('bill_id', billId);
+
+    if (itemsError || !billItemsData) {
+      toast({ title: "Error fetching bill items", description: itemsError?.message, variant: "destructive" });
+      setLoading(false);
+      return;
+    }
+
+    const customer = Array.isArray(billDetails.customers) ? billDetails.customers[0] : billDetails.customers;
+
+    if (!customer) {
+        toast({ title: "Error", description: "Customer details not found for this bill.", variant: "destructive" });
+        setLoading(false);
+        return;
+    }
+
+    const itemsForPdf: BillItem[] = billItemsData.map((item: any) => ({
+        product_id: item.product_id,
+        product_name: item.products?.name || 'Unknown Product',
+        quantity: item.quantity,
+        price: item.price,
+        master_lot_size: 0, 
+        lots: '',
+        lot_price: 0,
+    }));
+
+
+    generatePdf(billDetails, itemsForPdf, customer);
+    setLoading(false);
   };
 
   const submitBill = async () => {
@@ -303,7 +410,7 @@ export const Billing = () => {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="create-bill">
-        <TabsList>
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="create-bill">Create Bill</TabsTrigger>
           <TabsTrigger value="all-bills">All Bills</TabsTrigger>
         </TabsList>
@@ -324,13 +431,49 @@ export const Billing = () => {
 
               <div className="space-y-2">
                 <Label>Add Products</Label>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <Select value={selectedProduct} onValueChange={setSelectedProduct}><SelectTrigger><SelectValue placeholder="Select a product" /></SelectTrigger><SelectContent>{products.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name} (Stock: {p.inventory?.quantity ?? 0})</SelectItem>))}</SelectContent></Select>
-                  <Button onClick={addItem} size="icon"><Plus className="h-4 w-4" /></Button>
+                  <Button onClick={addItem} className="sm:w-auto w-full"><Plus className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Add</span></Button>
                 </div>
               </div>
 
-              <Card>
+              {/* Mobile View for Bill Items */}
+              <div className="space-y-4 md:hidden">
+                {billItems.map((item, index) => (
+                  <Card key={index}>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                      <CardTitle className="text-base font-medium">{item.product_name}</CardTitle>
+                      <Button variant="ghost" size="icon" onClick={() => removeItem(index)}><Trash2 className="h-4 w-4" /></Button>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>Lots</Label>
+                          <Input type="number" value={item.lots} onChange={(e) => handleItemChange(index, "lots", e.target.value)} />
+                        </div>
+                        <div>
+                          <Label>Quantity</Label>
+                          <Input type="number" value={item.quantity} onChange={(e) => handleItemChange(index, "quantity", e.target.value)} />
+                        </div>
+                        <div>
+                          <Label>Price/Unit</Label>
+                          <Input type="number" value={item.price} onChange={(e) => handleItemChange(index, "price", e.target.value)} />
+                        </div>
+                        <div>
+                          <Label>Price/Lot</Label>
+                          <Input type="number" value={item.lot_price} onChange={(e) => handleItemChange(index, "lot_price", e.target.value)} />
+                        </div>
+                      </div>
+                      <div className="text-right font-medium">
+                        Total: ₹{(item.quantity * item.price).toFixed(2)}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Desktop View for Bill Items */}
+              <Card className="hidden md:block">
                 <CardContent className="p-0">
                     <div className="overflow-x-auto">
                         <Table>
@@ -349,10 +492,10 @@ export const Billing = () => {
                                 {billItems.map((item, index) => (
                                 <TableRow key={index}>
                                     <TableCell>{item.product_name}</TableCell>
-                                    <TableCell><Input type="number" value={item.lots} onChange={(e) => handleItemChange(index, "lots", e.target.value)} className="w-24" /></TableCell>
-                                    <TableCell><Input type="number" value={item.quantity} onChange={(e) => handleItemChange(index, "quantity", e.target.value)} className="w-24" /></TableCell>
-                                    <TableCell><Input type="number" value={item.price} onChange={(e) => handleItemChange(index, "price", e.target.value)} className="w-24" /></TableCell>
-                                    <TableCell><Input type="number" value={item.lot_price} onChange={(e) => handleItemChange(index, "lot_price", e.target.value)} className="w-24" /></TableCell>
+                                    <TableCell><Input type="number" value={item.lots} onChange={(e) => handleItemChange(index, "lots", e.target.value)} className="min-w-[5rem]" /></TableCell>
+                                    <TableCell><Input type="number" value={item.quantity} onChange={(e) => handleItemChange(index, "quantity", e.target.value)} className="min-w-[5rem]" /></TableCell>
+                                    <TableCell><Input type="number" value={item.price} onChange={(e) => handleItemChange(index, "price", e.target.value)} className="min-w-[5rem]" /></TableCell>
+                                    <TableCell><Input type="number" value={item.lot_price} onChange={(e) => handleItemChange(index, "lot_price", e.target.value)} className="min-w-[5rem]" /></TableCell>
                                     <TableCell>₹{(item.quantity * item.price).toFixed(2)}</TableCell>
                                     <TableCell><Button variant="ghost" size="icon" onClick={() => removeItem(index)}><Trash2 className="h-4 w-4" /></Button></TableCell>
                                 </TableRow>
@@ -379,7 +522,7 @@ export const Billing = () => {
                 <Textarea id="comments" value={comments} onChange={(e) => setComments(e.target.value)} placeholder="Add any comments for the bill..." />
               </div>
 
-              <Button onClick={submitBill} disabled={loading}>Create Bill & Download PDF</Button>
+              <Button onClick={submitBill} disabled={loading} className="w-full sm:w-auto">Create Bill & Download PDF</Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -387,11 +530,39 @@ export const Billing = () => {
           <Card>
             <CardHeader><CardTitle>All Bills</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                  <Select value={customerFilter} onValueChange={setCustomerFilter}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Filter by customer" /></SelectTrigger><SelectContent><SelectItem value="all">All Customers</SelectItem>{customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Filter by status" /></SelectTrigger><SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="outstanding">Outstanding</SelectItem><SelectItem value="paid">Paid</SelectItem><SelectItem value="partial">Partial</SelectItem></SelectContent></Select>
+              <div className="flex flex-col sm:flex-row gap-2">
+                  <Select value={customerFilter} onValueChange={setCustomerFilter}><SelectTrigger><SelectValue placeholder="Filter by customer" /></SelectTrigger><SelectContent><SelectItem value="all">All Customers</SelectItem>{customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger><SelectValue placeholder="Filter by status" /></SelectTrigger><SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="outstanding">Outstanding</SelectItem><SelectItem value="paid">Paid</SelectItem><SelectItem value="partial">Partial</SelectItem></SelectContent></Select>
               </div>
-              <div className="overflow-x-auto">
+              
+              {/* Mobile View for All Bills */}
+              <div className="space-y-4 md:hidden">
+                {filteredBills.map((bill) => (
+                  <Card key={bill.id}>
+                    <CardHeader>
+                      <CardTitle className="text-base font-medium">Bill #{bill.id.slice(0, 6)}...</CardTitle>
+                      <p className="text-sm text-muted-foreground">{bill.customers?.name || 'N/A'}</p>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span>Date:</span>
+                        <span>{new Date(bill.date_of_bill).toLocaleDateString()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span>Amount:</span>
+                        <span className="font-bold">₹{bill.total_amount.toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between pt-2">
+                        <Badge variant={bill.status === "paid" ? "default" : bill.status === "outstanding" ? "destructive" : "secondary"}>{bill.status}</Badge>
+                        <Button variant="outline" size="sm" onClick={() => handleDownloadPdf(bill.id)}><Download className="mr-2 h-4 w-4" />PDF</Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Desktop View for All Bills */}
+              <div className="overflow-x-auto hidden md:block">
                 <Table>
                     <TableHeader>
                         <TableRow>
