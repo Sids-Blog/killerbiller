@@ -25,6 +25,8 @@ const navigation = [
   { name: "Payments", href: "/payments", icon: CreditCard },
   { name: "Customers", href: "/customers", icon: Users },
   { name: "Products", href: "/products", icon: Settings },
+  { name: "Admin", href: "/admin", icon: Home },
+  // Add more items as needed
 ];
 
 interface SidebarProps {

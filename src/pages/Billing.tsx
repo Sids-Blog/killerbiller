@@ -21,9 +21,11 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 // Interfaces
 interface BillItem {
@@ -40,6 +42,8 @@ interface Customer {
   id: string;
   name: string;
   primary_phone_number: string;
+  address: string;
+  gst_number: string;
 }
 
 interface Product {
@@ -56,7 +60,7 @@ interface Bill {
   created_at: string;
   total_amount: number;
   status: 'outstanding' | 'paid' | 'partial';
-  customers: { name: string }[];
+  customers: { name: string } | null;
 }
 
 export const Billing = () => {
@@ -83,8 +87,9 @@ export const Billing = () => {
     setLoading(true);
     const customerPromise = supabase
       .from("customers")
-      .select("id, name, primary_phone_number")
-      .eq("is_active", true);
+      .select("id, name, primary_phone_number, address, gst_number")
+      .eq("is_active", true)
+      .eq("type", "customer");
     const productPromise = supabase
       .from("products")
       .select("*, inventory(quantity)");
@@ -126,8 +131,14 @@ export const Billing = () => {
         variant: "destructive",
       });
     } else {
-      setBills(billsRes.data || []);
-      setFilteredBills(billsRes.data || []);
+      // Supabase returns 'customers' as an array, but our interface expects an object.
+      // We transform the data to take the first customer in the array.
+      const transformedData = (billsRes.data || []).map(bill => ({
+        ...bill,
+        customers: Array.isArray(bill.customers) ? bill.customers[0] || null : bill.customers,
+      }));
+      setBills(transformedData as unknown as Bill[]);
+      setFilteredBills(transformedData as unknown as Bill[]);
     }
 
     setLoading(false);
@@ -141,7 +152,7 @@ export const Billing = () => {
   useEffect(() => {
     let result = bills;
     if (customerFilter !== "all") {
-      result = result.filter(bill => bill.customers[0]?.name === customers.find(c => c.id === customerFilter)?.name);
+      result = result.filter(bill => bill.customers?.name === customers.find(c => c.id === customerFilter)?.name);
     }
     if (statusFilter !== "all") {
       result = result.filter(bill => bill.status === statusFilter);
@@ -227,6 +238,178 @@ export const Billing = () => {
     0
   ), [billItems]);
 
+  const generatePdf = (billDetails: any, items: any[], customerDetails: any) => {
+    const doc = new jsPDF();
+    const pageHeight = doc.internal.pageSize.height;
+    const pageWidth = doc.internal.pageSize.width;
+
+    // Colors
+    const primaryColor = '#000000';
+    const secondaryColor = '#555555';
+    const tableHeaderColor = '#F0F0F0';
+
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(primaryColor);
+
+    // Header
+    doc.setFontSize(28);
+    doc.setFont("helvetica", "bold");
+    doc.text("INVOICE", pageWidth / 2, 25, { align: 'center' });
+
+    // Company Logo Placeholder
+    doc.setDrawColor(secondaryColor);
+    doc.rect(20, 15, 25, 25); 
+    doc.setFontSize(10);
+    doc.setTextColor(secondaryColor);
+    doc.text("Logo", 32.5, 30, { align: 'center' });
+
+    // Company Details
+    doc.setTextColor(primaryColor);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Killer Biller Inc.", 20, 50);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(secondaryColor);
+    doc.text("123 Business Rd", 20, 55);
+    doc.text("Business City, 12345", 20, 60);
+
+    // Invoice Details
+    const invoiceDetailsX = pageWidth - 20;
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(primaryColor);
+    doc.text("Invoice #:", invoiceDetailsX, 40, { align: 'right' });
+    doc.text("Date:", invoiceDetailsX, 45, { align: 'right' });
+    doc.text("Due Date:", invoiceDetailsX, 50, { align: 'right' });
+
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(secondaryColor);
+    doc.text(billDetails.id.slice(0, 8), invoiceDetailsX - 25, 40, { align: 'right' });
+    doc.text(new Date(billDetails.created_at).toLocaleDateString(), invoiceDetailsX - 25, 45, { align: 'right' });
+    const dueDate = new Date(billDetails.created_at);
+    dueDate.setDate(dueDate.getDate() + 30);
+    doc.text(dueDate.toLocaleDateString(), invoiceDetailsX - 25, 50, { align: 'right' });
+
+    // Bill To / Ship To
+    doc.setLineWidth(0.1);
+    doc.line(20, 70, pageWidth - 20, 70);
+    
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(primaryColor);
+    doc.text("BILL TO", 20, 80);
+    doc.text("SHIP TO", pageWidth / 2 + 10, 80);
+
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(secondaryColor);
+    doc.text(customerDetails.name, 20, 85);
+    doc.text(customerDetails.address, 20, 90);
+    doc.text(customerDetails.primary_phone_number, 20, 95);
+
+    doc.text(customerDetails.name, pageWidth / 2 + 10, 85);
+    doc.text(customerDetails.address, pageWidth / 2 + 10, 90);
+    doc.text(customerDetails.primary_phone_number, pageWidth / 2 + 10, 95);
+
+    // Bill Items Table
+    const tableColumn = ["DESCRIPTION", "QTY", "UNIT PRICE", "TOTAL"];
+    const tableRows: any[] = [];
+    let subtotal = 0;
+
+    items.forEach(item => {
+      const lineTotal = item.quantity * item.price;
+      subtotal += lineTotal;
+      const itemData = [
+        item.products?.name || item.product_name,
+        item.quantity,
+        `Rs. ${item.price.toFixed(2)}`,
+        `Rs. ${lineTotal.toFixed(2)}`
+      ];
+      tableRows.push(itemData);
+    });
+
+    autoTable(doc, {
+      startY: 110,
+      head: [tableColumn],
+      body: tableRows,
+      theme: 'plain',
+      headStyles: {
+        fillColor: tableHeaderColor,
+        textColor: primaryColor,
+        fontStyle: 'bold',
+      },
+      styles: {
+        lineWidth: 0.1,
+        lineColor: [180, 180, 180],
+      },
+      columnStyles: {
+        0: { halign: 'left' },
+        1: { halign: 'right' },
+        2: { halign: 'right' },
+        3: { halign: 'right' },
+      }
+    });
+
+    // Totals
+    let finalY = (doc as any).lastAutoTable.finalY + 15;
+    const totalsX = pageWidth - 80;
+    
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(secondaryColor);
+    doc.text("Subtotal:", totalsX, finalY);
+    doc.text(`Rs. ${subtotal.toFixed(2)}`, pageWidth - 20, finalY, { align: 'right' });
+
+    finalY += 7;
+    doc.text("Discount:", totalsX, finalY);
+    doc.text(`Rs. ${(billDetails.discount || 0).toFixed(2)}`, pageWidth - 20, finalY, { align: 'right' });
+
+    finalY += 10;
+    doc.setLineWidth(0.2);
+    doc.line(totalsX - 5, finalY, pageWidth - 20, finalY);
+    finalY += 7;
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(primaryColor);
+    doc.text("Grand Total:", totalsX, finalY);
+    doc.text(`Rs. ${billDetails.total_amount.toFixed(2)}`, pageWidth - 20, finalY, { align: 'right' });
+
+    // Notes / Thank you
+    finalY += 20;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(secondaryColor);
+    doc.text("Thank you for your business.", 20, finalY);
+    if (billDetails.comments) {
+      finalY += 5;
+      doc.setFontSize(8);
+      doc.text("Comments:", 20, finalY);
+      const splitComments = doc.splitTextToSize(billDetails.comments, pageWidth - 40);
+      doc.text(splitComments, 20, finalY + 4);
+    }
+
+    // Footer
+    const footerY = pageHeight - 20;
+    doc.setLineWidth(0.5);
+    doc.line(20, footerY, pageWidth - 20, footerY);
+    doc.setFontSize(8);
+    doc.text("Phone: (123) 456-7890", 20, footerY + 8);
+    doc.text("Email: contact@killerbiller.com", pageWidth / 2, footerY + 8, { align: 'center' });
+    doc.text("Website: www.killerbiller.com", pageWidth - 20, footerY + 8, { align: 'right' });
+
+    doc.save(`invoice-${billDetails.id.slice(0,8)}.pdf`);
+  };
+
+  const handleDownloadPdf = async (billId: string) => {
+    const { data, error } = await supabase
+      .from('bills')
+      .select('*, customers(*), bill_items(*, products(name))')
+      .eq('id', billId)
+      .single();
+
+    if (error || !data) {
+      toast({ title: "Error", description: "Could not fetch bill details for PDF.", variant: "destructive" });
+      return;
+    }
+    
+    generatePdf(data, data.bill_items, data.customers);
+  };
+
   const submitBill = async () => {
     if (!selectedCustomer || billItems.length === 0) {
       toast({
@@ -311,6 +494,11 @@ export const Billing = () => {
     }
 
     toast({ title: "Success", description: "Bill created successfully" });
+
+    const customerDetails = customers.find(c => c.id === selectedCustomer);
+    if (customerDetails) {
+      generatePdf({ ...bill, discount, comments }, billItems, customerDetails);
+    }
 
     setSelectedCustomer("");
     setBillItems([]);
@@ -558,16 +746,17 @@ export const Billing = () => {
                     <TableHead>Date</TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={5}>Loading...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6}>Loading...</TableCell></TableRow>
                   ) : (
                     filteredBills.map(bill => (
                       <TableRow key={bill.id}>
                         <TableCell className="font-mono">{bill.id.slice(0, 8)}</TableCell>
-                        <TableCell>{bill.customers[0]?.name ?? "N/A"}</TableCell>
+                        <TableCell>{bill.customers?.name ?? "N/A"}</TableCell>
                         <TableCell>{new Date(bill.created_at).toLocaleDateString()}</TableCell>
                         <TableCell>₹{bill.total_amount.toFixed(2)}</TableCell>
                         <TableCell>
@@ -577,6 +766,11 @@ export const Billing = () => {
                           }>
                             {bill.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="icon" onClick={() => handleDownloadPdf(bill.id)}>
+                            <Download className="h-4 w-4" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))

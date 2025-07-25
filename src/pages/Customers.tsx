@@ -21,6 +21,13 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -39,6 +46,7 @@ interface Customer {
   manager_name: string;
   manager_phone_number: string;
   comments: string;
+  type: "customer" | "vendor";
   is_active: boolean;
 }
 
@@ -63,7 +71,7 @@ export const Customers = () => {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(
     null
   );
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<Omit<Customer, "id">>({
     name: "",
     primary_phone_number: "",
     address: "",
@@ -71,6 +79,7 @@ export const Customers = () => {
     manager_name: "",
     manager_phone_number: "",
     comments: "",
+    type: "customer",
     is_active: true,
   });
 
@@ -88,7 +97,7 @@ export const Customers = () => {
         variant: "destructive",
       });
     } else {
-      setCustomers(data || []);
+      setCustomers(data as Customer[] || []);
     }
     setLoading(false);
   }, [toast]);
@@ -111,6 +120,7 @@ export const Customers = () => {
         manager_name: "",
         manager_phone_number: "",
         comments: "",
+        type: "customer",
         is_active: true,
       });
     }
@@ -255,6 +265,23 @@ export const Customers = () => {
                   }
                 />
               </div>
+              <div className="space-y-2">
+                <MandatoryLabel>Type</MandatoryLabel>
+                <Select
+                  value={formData.type}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, type: value as "customer" | "vendor" })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="customer">Customer</SelectItem>
+                    <SelectItem value="vendor">Vendor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="col-span-2 space-y-2">
                 <Label htmlFor="comments">Comments</Label>
                 <Textarea
@@ -296,6 +323,7 @@ export const Customers = () => {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Primary Phone</TableHead>
+              <TableHead>Type</TableHead>
               <TableHead>GST Number</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Actions</TableHead>
@@ -304,7 +332,7 @@ export const Customers = () => {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center">
+                <TableCell colSpan={6} className="text-center">
                   Loading...
                 </TableCell>
               </TableRow>
@@ -313,6 +341,15 @@ export const Customers = () => {
                 <TableRow key={customer.id}>
                   <TableCell>{customer.name}</TableCell>
                   <TableCell>{customer.primary_phone_number}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={
+                        customer.type === "customer" ? "default" : "secondary"
+                      }
+                    >
+                      {customer.type}
+                    </Badge>
+                  </TableCell>
                   <TableCell>{customer.gst_number}</TableCell>
                   <TableCell>
                     <Badge

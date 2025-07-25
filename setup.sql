@@ -8,6 +8,7 @@ CREATE TABLE customers (
   manager_name TEXT,
   manager_phone_number TEXT,
   comments TEXT,
+  type TEXT NOT NULL DEFAULT 'customer' CHECK (type IN ('vendor', 'customer')),
   is_active BOOLEAN DEFAULT true,
   outstanding_balance NUMERIC(10, 2) DEFAULT 0.00,
   created_at TIMESTAMPTZ DEFAULT now()
@@ -168,6 +169,38 @@ ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bill_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+
+-- Create Inventory Transactions table
+CREATE TABLE inventory_transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE NOT NULL,
+  vendor_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+  quantity_change INTEGER NOT NULL,
+  comments TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Function to increment stock
+CREATE OR REPLACE FUNCTION increment_stock(p_product_id UUID, p_quantity INTEGER, p_vendor_id UUID, p_comments TEXT)
+RETURNS VOID AS $
+BEGIN
+  -- Add the transaction to the log
+  INSERT INTO inventory_transactions (product_id, quantity_change, vendor_id, comments)
+  VALUES (p_product_id, p_quantity, p_vendor_id, p_comments);
+
+  -- Update the main inventory table
+  UPDATE inventory
+  SET quantity = quantity + p_quantity, updated_at = now()
+  WHERE product_id = p_product_id;
+
+  -- If the product is not in the inventory table, insert it.
+  IF NOT FOUND THEN
+    INSERT INTO inventory (product_id, quantity)
+    VALUES (p_product_id, p_quantity);
+  END IF;
+END;
+$ LANGUAGE plpgsql;
+
 
 -- Policies (assuming you have a system where users are associated with their data)
 -- These are placeholder policies. You'll need to adapt them to your authentication setup.
