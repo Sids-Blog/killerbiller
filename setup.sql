@@ -45,6 +45,8 @@ CREATE TABLE bills (
   status TEXT NOT NULL DEFAULT 'outstanding', -- outstanding, partial, paid
   due_date DATE DEFAULT now() + interval '30 days',
   discount NUMERIC(10, 2) DEFAULT 0.00,
+  gst_amount NUMERIC(10, 2) DEFAULT 0.00,
+  is_gst_bill BOOLEAN DEFAULT false,
   comments TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   date_of_bill TIMESTAMPTZ DEFAULT now()
@@ -234,7 +236,7 @@ RETURNS TABLE(
     daily_expense NUMERIC,
     weekly_expense NUMERIC,
     monthly_expense NUMERIC
-) AS $$
+) AS $
 BEGIN
   RETURN QUERY
   SELECT
@@ -245,7 +247,50 @@ BEGIN
     (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND date_of_transaction >= now() - interval '7 days') as weekly_expense,
     (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND date_of_transaction >= now() - interval '30 days') as monthly_expense;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
+
+-- Function to delete a bill and handle all related data
+CREATE OR REPLACE FUNCTION delete_bill(p_bill_id UUID)
+RETURNS VOID AS $
+DECLARE
+  bill_to_delete RECORD;
+  item_to_revert RECORD;
+BEGIN
+  -- 1. Get the bill details before deleting
+  SELECT * INTO bill_to_delete FROM bills WHERE id = p_bill_id;
+
+  -- If bill doesn't exist, exit
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  -- 2. Revert customer's outstanding balance
+  IF bill_to_delete.customer_id IS NOT NULL THEN
+    UPDATE customers
+    SET outstanding_balance = outstanding_balance - bill_to_delete.total_amount
+    WHERE id = bill_to_delete.customer_id;
+  END IF;
+
+  -- 3. Revert stock for each item in the bill
+  FOR item_to_revert IN
+    SELECT * FROM bill_items WHERE bill_id = p_bill_id
+  LOOP
+    UPDATE inventory
+    SET quantity = quantity + item_to_revert.quantity
+    WHERE product_id = item_to_revert.product_id;
+  END LOOP;
+
+  -- 4. Delete related transactions (payments applied to this bill)
+  DELETE FROM transactions WHERE bill_id = p_bill_id;
+
+  -- 5. Delete bill items (CASCADE delete should handle this, but explicit is safer)
+  DELETE FROM bill_items WHERE bill_id = p_bill_id;
+
+  -- 6. Delete the bill itself
+  DELETE FROM bills WHERE id = p_bill_id;
+
+END;
+$ LANGUAGE plpgsql;
 
 
 -- === ROW LEVEL SECURITY (RLS) ===
