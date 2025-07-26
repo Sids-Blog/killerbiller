@@ -3,12 +3,20 @@ import { Customer } from '@/pages/Customers';
 import React from 'react';
 
 interface InvoiceTemplateProps {
+  billCalculations: {
+    sgst: number;
+    cgst: number;
+    cess: number;
+    taxableValue: number;
+    subtotal: number;
+    grandTotal: number;
+  }
   billDetails: any;
   items: BillItem[];
   customerDetails: Customer;
 }
 
-const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billDetails, items, customerDetails }) => {
+const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, billDetails, items, customerDetails }) => {
   // Calculate tax amounts using database values
   const subtotal = billDetails.total_amount || items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
   const cgstRate = billDetails.cgst_percentage || 9; // Use DB value or default to 9%
@@ -20,7 +28,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billDetails, items, c
   const cgstAmount = billDetails.is_gst_bill ? (subtotal * cgstRate) / 100 : 0;
   const sgstAmount = billDetails.is_gst_bill ? (subtotal * sgstRate) / 100 : 0;
   const cessAmount = billDetails.is_gst_bill ? (subtotal * cessRate) / 100 : 0;
-  
+  const discount = billDetails.discount || 0; // Use DB value or default to 0
   const grandTotal = subtotal + totalTaxAmount - (billDetails.discount || 0);
 
   const tableStyle = {
@@ -48,7 +56,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billDetails, items, c
       fontFamily: 'Arial, sans-serif',
       fontSize: '12px',
       color: '#000',
-      width: '100%',
+      width: '100%', // Use 100% width to be fluid
       minHeight: '800px',
       padding: '20px',
       boxSizing: 'border-box',
@@ -212,12 +220,16 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billDetails, items, c
             </>
           )}
 
+          {discount > 0 && (
+            <tr>
+              <td style={cellStyle} colSpan={7} align='right'>Discount</td>
+              <td style={{ ...cellStyle, textAlign: 'right' }}>-{discount.toFixed(2)}</td>
+            </tr>
+          )}
+
           {/* Total row */}
           <tr>
-            <td style={cellStyle}></td>
-            <td style={cellStyle}></td>
-            <td style={{ ...cellStyle, fontWeight: 'bold' }}>Total</td>
-            <td style={cellStyle}></td>
+            <td style={{...cellStyle, fontWeight: 'bold'}} colSpan={4}>Total</td>
             <td style={{ ...cellStyle, textAlign: 'center', fontWeight: 'bold' }}>
               {items.reduce((sum, item) => sum + item.quantity, 0)} Nos.
             </td>

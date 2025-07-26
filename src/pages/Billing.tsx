@@ -57,7 +57,7 @@ export interface BillItem {
 }
 
 interface Product {
-  id:string;
+  id: string;
   name: string;
   price: number;
   lot_size: number;
@@ -203,19 +203,29 @@ export const Billing = () => {
     if (!product) return;
 
     const availableStock = product.inventory?.quantity ?? 0;
-    if (product.lot_size > availableStock) {
-      toast({ title: "Error", description: `Not enough stock for ${product.name}. Available: ${availableStock}`, variant: "destructive" });
+    const quantityInBill = billItems
+      .filter(item => item.product_id === selectedProduct)
+      .reduce((sum, item) => sum + item.quantity, 0);
+
+    const requestedQuantity = product.lot_size;
+
+    if (quantityInBill + requestedQuantity > availableStock) {
+      toast({
+        title: "Error: Stock Limit Exceeded",
+        description: `Cannot add ${requestedQuantity} of ${product.name}. Available stock: ${availableStock}. You already have ${quantityInBill} in this bill.`,
+        variant: "destructive",
+      });
       return;
     }
 
     setBillItems([...billItems, {
-        product_id: product.id,
-        product_name: product.name,
-        master_lot_size: product.lot_size,
-        lots: "1",
-        quantity: product.lot_size,
-        price: product.price,
-        lot_price: product.lot_price,
+      product_id: product.id,
+      product_name: product.name,
+      master_lot_size: product.lot_size,
+      lots: "1",
+      quantity: product.lot_size,
+      price: product.price,
+      lot_price: product.lot_price,
     }]);
     setSelectedProduct("");
   };
@@ -227,19 +237,31 @@ export const Billing = () => {
   const handleItemChange = (index: number, field: keyof BillItem, value: string | number) => {
     const updatedItems = [...billItems];
     const item = { ...updatedItems[index] };
+    const product = products.find((p) => p.id === item.product_id);
+    if (!product) return;
+
+    const availableStock = product.inventory?.quantity ?? 0;
+    let newQuantity = item.quantity;
 
     switch (field) {
       case "lots":
-        item.lots = String(value);
-        item.quantity = (parseInt(String(value)) || 0) * item.master_lot_size;
-        const product = products.find((p) => p.id === item.product_id);
-        if (product) {
-          item.price = product.price;
-          item.lot_price = product.lot_price;
+        newQuantity = (parseInt(String(value)) || 0) * item.master_lot_size;
+        if (newQuantity > availableStock) {
+          toast({ title: "Error: Stock Limit Exceeded", description: `Cannot set quantity to ${newQuantity} for ${product.name}. Available stock: ${availableStock}.`, variant: "destructive" });
+          return;
         }
+        item.lots = String(value);
+        item.quantity = newQuantity;
+        item.price = product.price;
+        item.lot_price = product.lot_price;
         break;
       case "quantity":
-        item.quantity = parseInt(String(value)) || 0;
+        newQuantity = parseInt(String(value)) || 0;
+        if (newQuantity > availableStock) {
+          toast({ title: "Error: Stock Limit Exceeded", description: `Cannot set quantity to ${newQuantity} for ${product.name}. Available stock: ${availableStock}.`, variant: "destructive" });
+          return;
+        }
+        item.quantity = newQuantity;
         item.lots = "";
         break;
       case "price":
@@ -282,7 +304,7 @@ export const Billing = () => {
           totalCess += basePrice * (cessPercent / 100);
         }
       });
-      
+
       taxDetails = {
         sgst: totalSgst,
         cgst: totalCgst,
@@ -291,7 +313,7 @@ export const Billing = () => {
       };
       grandTotal = totalTaxableValue + totalSgst + totalCgst + totalCess - discount;
     }
-    
+
     return {
       subtotal,
       grandTotal,
@@ -299,110 +321,55 @@ export const Billing = () => {
     };
   }, [billItems, discount, isGstBill, sgstPercent, cgstPercent, cessPercent]);
 
-const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Customer) => {
-  // Create a visible container first for debugging
-  const container = document.createElement('div');
-  container.style.position = 'fixed';
-  container.style.top = '0';
-  container.style.left = '0';
-  container.style.width = '100vw';
-  container.style.height = '100vh';
-  container.style.backgroundColor = 'rgba(0,0,0,0.8)';
-  container.style.zIndex = '9999';
-  container.style.overflowY = 'auto';
-  container.style.display = 'flex';
-  container.style.justifyContent = 'center';
-  container.style.alignItems = 'flex-start';
-  container.style.padding = '20px';
-  document.body.appendChild(container);
+  const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Customer) => {
+    // Create a temporary, hidden container for rendering
+    const container = document.createElement('div');
+    container.style.position = 'absolute';
+    container.style.left = '-9999px'; // Position off-screen
+    container.style.width = '210mm'; // A4 width for an accurate preview
+    document.body.appendChild(container);
 
-  // Create the actual content wrapper
-  const wrapper = document.createElement('div');
-  wrapper.style.width = '800px'; // Fixed width instead of mm units
-  wrapper.style.minHeight = '1000px';
-  wrapper.style.backgroundColor = 'white';
-  wrapper.style.padding = '20px';
-  wrapper.style.boxSizing = 'border-box';
-  wrapper.style.fontFamily = 'Arial, sans-serif';
-  wrapper.style.fontSize = '12px';
-  wrapper.style.color = '#000';
-  container.appendChild(wrapper);
+    // Render the React component into the container
+    const root = createRoot(container);
+    root.render(
+      <InvoiceTemplate
+        billDetails={billDetails}
+        billCalculations={billCalculations}
+        items={items}
+        customerDetails={customerDetails}
+      />
+    );
 
-  // Render the React component
-  const root = createRoot(wrapper);
-  root.render(
-    <InvoiceTemplate 
-      billDetails={billDetails} 
-      items={items} 
-      customerDetails={customerDetails} 
-    />
-  );
+    const opt = {
+      margin: 0.5,
+      filename: `invoice_${billDetails.id}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
 
-  // Simplified PDF options
-  const opt = {
-    margin: 0.5,
-    filename: `tax_invoice_${billDetails.id}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { 
-      scale: 2,
-      useCORS: true,
-      logging: true, // Enable logging for debugging
-      backgroundColor: '#ffffff'
-    },
-    jsPDF: { 
-      unit: 'in', 
-      format: 'letter', 
-      orientation: 'portrait' 
-    }
-  };
-
-  // Add close button for debugging
-  const closeButton = document.createElement('button');
-  closeButton.innerHTML = 'Generate PDF';
-  closeButton.style.position = 'absolute';
-  closeButton.style.top = '10px';
-  closeButton.style.right = '10px';
-  closeButton.style.padding = '10px 20px';
-  closeButton.style.backgroundColor = '#007bff';
-  closeButton.style.color = 'white';
-  closeButton.style.border = 'none';
-  closeButton.style.borderRadius = '5px';
-  closeButton.style.cursor = 'pointer';
-  closeButton.style.zIndex = '10000';
-  container.appendChild(closeButton);
-
-  closeButton.onclick = () => {
-    // Generate PDF when button is clicked
-    console.log('Starting PDF generation...');
-    html2pdf()
-      .from(wrapper)
-      .set(opt)
-      .save()
-      .then(() => {
-        console.log('PDF generated successfully');
-        // Cleanup
-        root.unmount();
-        document.body.removeChild(container);
-      })
-      .catch((err: any) => {
-        console.error("PDF generation error:", err);
-        alert('Error generating PDF: ' + err.message);
-        // Cleanup
-        root.unmount();
-        if (document.body.contains(container)) {
+    // Allow a brief moment for the component to render before capturing
+    setTimeout(() => {
+      html2pdf()
+        .from(container)
+        .set(opt)
+        .save()
+        .then(() => {
+          // Cleanup after saving
+          root.unmount();
           document.body.removeChild(container);
-        }
-      });
+        })
+        .catch((err: any) => {
+          console.error("PDF generation error:", err);
+          // Ensure cleanup happens even if there's an error
+          root.unmount();
+          if (document.body.contains(container)) {
+            document.body.removeChild(container);
+          }
+        });
+    }, 500);
   };
 
-  // Auto-generate after a delay (you can remove this if you want manual control)
-  setTimeout(() => {
-    console.log('Auto-generating PDF...');
-    closeButton.click();
-  }, 2000);
-};
-
-// Alternative function for preview (shows PDF content in modal)
   const previewInvoice = (billDetails: any, items: BillItem[], customerDetails: Customer) => {
     // Create a modal container
     const modal = document.createElement('div');
@@ -417,7 +384,7 @@ const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Custo
     modal.style.justifyContent = 'center';
     modal.style.alignItems = 'center';
     modal.style.overflowY = 'auto';
-    
+
     // Create content container
     const content = document.createElement('div');
     content.style.backgroundColor = 'white';
@@ -427,7 +394,7 @@ const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Custo
     content.style.position = 'relative';
     content.style.borderRadius = '8px';
     content.style.boxShadow = '0 10px 30px rgba(0,0,0,0.3)';
-    
+
     // Close button
     const closeButton = document.createElement('button');
     closeButton.innerHTML = '×';
@@ -444,23 +411,24 @@ const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Custo
       root.unmount();
       document.body.removeChild(modal);
     };
-    
+
     content.appendChild(closeButton);
     modal.appendChild(content);
     document.body.appendChild(modal);
-    
+
     // Render the invoice
     const root = createRoot(content);
     root.render(
       <div style={{ padding: '20px' }}>
-        <InvoiceTemplate 
-          billDetails={billDetails} 
-          items={items} 
-          customerDetails={customerDetails} 
+        <InvoiceTemplate
+          billCalculations={billCalculations}
+          billDetails={billDetails}
+          items={items}
+          customerDetails={customerDetails}
         />
       </div>
     );
-    
+
     // Close modal when clicking outside
     modal.onclick = (e) => {
       if (e.target === modal) {
@@ -498,21 +466,20 @@ const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Custo
     const customer = Array.isArray(billDetails.customers) ? billDetails.customers[0] : billDetails.customers;
 
     if (!customer) {
-        toast({ title: "Error", description: "Customer details not found for this bill.", variant: "destructive" });
-        setLoading(false);
-        return;
+      toast({ title: "Error", description: "Customer details not found for this bill.", variant: "destructive" });
+      setLoading(false);
+      return;
     }
 
     const itemsForPdf: BillItem[] = billItemsData.map((item: any) => ({
-        product_id: item.product_id,
-        product_name: item.products?.name || 'Unknown Product',
-        quantity: item.quantity,
-        price: item.price,
-        master_lot_size: 0, 
-        lots: '',
-        lot_price: 0,
+      product_id: item.product_id,
+      product_name: item.products?.name || 'Unknown Product',
+      quantity: item.quantity,
+      price: item.price,
+      master_lot_size: 0,
+      lots: '',
+      lot_price: 0,
     }));
-
 
     //generatePdf(billDetails, itemsForPdf, customer);
     previewInvoice(billDetails, itemsForPdf, customer);
@@ -523,6 +490,20 @@ const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Custo
     if (!selectedCustomer || billItems.length === 0) {
       toast({ title: "Error", description: "Please select a customer and add at least one item", variant: "destructive" });
       return;
+    }
+
+    // Final stock validation before submission
+    for (const item of billItems) {
+      const product = products.find(p => p.id === item.product_id);
+      const availableStock = product?.inventory?.quantity ?? 0;
+      if (item.quantity > availableStock) {
+        toast({
+          title: "Error: Stock Limit Exceeded",
+          description: `The quantity for ${item.product_name} (${item.quantity}) exceeds the available stock (${availableStock}). Please remove it or reduce the quantity.`,
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     const { grandTotal, sgst, cgst, cess } = billCalculations;
@@ -607,8 +588,8 @@ const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Custo
                     <Select value={selectedCustomer} onValueChange={setSelectedCustomer}><SelectTrigger><SelectValue placeholder="Select a customer" /></SelectTrigger><SelectContent>{customers.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}</SelectContent></Select>
                   </div>
                   <div>
-                      <Label htmlFor="billDate">Bill Date</Label>
-                      <Popover><PopoverTrigger asChild><Button variant={"outline"} className="w-full justify-start text-left font-normal">{billDate ? format(billDate, "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={billDate} onSelect={setBillDate} initialFocus /></PopoverContent></Popover>
+                    <Label htmlFor="billDate">Bill Date</Label>
+                    <Popover><PopoverTrigger asChild><Button variant={"outline"} className="w-full justify-start text-left font-normal">{billDate ? format(billDate, "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={billDate} onSelect={setBillDate} initialFocus /></PopoverContent></Popover>
                   </div>
                 </div>
 
@@ -658,34 +639,34 @@ const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Custo
                 {/* Desktop View for Bill Items */}
                 <Card className="hidden md:block">
                   <CardContent className="p-0">
-                      <div className="overflow-x-auto">
-                          <Table>
-                              <TableHeader>
-                                  <TableRow>
-                                      <TableHead className="min-w-[150px]">Product</TableHead>
-                                      <TableHead>Lots</TableHead>
-                                      <TableHead>Quantity</TableHead>
-                                      <TableHead>Price/Unit</TableHead>
-                                      <TableHead>Price/Lot</TableHead>
-                                      <TableHead>Total</TableHead>
-                                      <TableHead></TableHead>
-                                  </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                  {billItems.map((item, index) => (
-                                  <TableRow key={index}>
-                                      <TableCell>{item.product_name}</TableCell>
-                                      <TableCell><Input type="number" value={item.lots} onChange={(e) => handleItemChange(index, "lots", e.target.value)} className="min-w-[5rem]" /></TableCell>
-                                      <TableCell><Input type="number" value={item.quantity} onChange={(e) => handleItemChange(index, "quantity", e.target.value)} className="min-w-[5rem]" /></TableCell>
-                                      <TableCell><Input type="number" value={item.price} onChange={(e) => handleItemChange(index, "price", e.target.value)} className="min-w-[5rem]" /></TableCell>
-                                      <TableCell><Input type="number" value={item.lot_price} onChange={(e) => handleItemChange(index, "lot_price", e.target.value)} className="min-w-[5rem]" /></TableCell>
-                                      <TableCell>₹{(item.quantity * item.price).toFixed(2)}</TableCell>
-                                      <TableCell><Button variant="ghost" size="icon" onClick={() => removeItem(index)}><Trash2 className="h-4 w-4" /></Button></TableCell>
-                                  </TableRow>
-                                  ))}
-                              </TableBody>
-                          </Table>
-                      </div>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="min-w-[150px]">Product</TableHead>
+                            <TableHead>Lots</TableHead>
+                            <TableHead>Quantity</TableHead>
+                            <TableHead>Price/Unit</TableHead>
+                            <TableHead>Price/Lot</TableHead>
+                            <TableHead>Total</TableHead>
+                            <TableHead></TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {billItems.map((item, index) => (
+                            <TableRow key={index}>
+                              <TableCell>{item.product_name}</TableCell>
+                              <TableCell><Input type="number" value={item.lots} onChange={(e) => handleItemChange(index, "lots", e.target.value)} className="min-w-[5rem]" /></TableCell>
+                              <TableCell><Input type="number" value={item.quantity} onChange={(e) => handleItemChange(index, "quantity", e.target.value)} className="min-w-[5rem]" /></TableCell>
+                              <TableCell><Input type="number" value={item.price} onChange={(e) => handleItemChange(index, "price", e.target.value)} className="min-w-[5rem]" /></TableCell>
+                              <TableCell><Input type="number" value={item.lot_price} onChange={(e) => handleItemChange(index, "lot_price", e.target.value)} className="min-w-[5rem]" /></TableCell>
+                              <TableCell>₹{(item.quantity * item.price).toFixed(2)}</TableCell>
+                              <TableCell><Button variant="ghost" size="icon" onClick={() => removeItem(index)}><Trash2 className="h-4 w-4" /></Button></TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -729,7 +710,7 @@ const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Custo
                     <p className="font-bold text-lg">Grand Total: ₹{billCalculations.grandTotal.toFixed(2)}</p>
                   </div>
                 </div>
-                
+
                 <div>
                   <Label htmlFor="comments">Comments</Label>
                   <Textarea id="comments" value={comments} onChange={(e) => setComments(e.target.value)} placeholder="Add any comments for the bill..." />
@@ -744,11 +725,11 @@ const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Custo
               <CardHeader><CardTitle>All Bills</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-col sm:flex-row gap-2">
-                    <Select value={customerFilter} onValueChange={setCustomerFilter}><SelectTrigger><SelectValue placeholder="Filter by customer" /></SelectTrigger><SelectContent><SelectItem value="all">All Customers</SelectItem>{customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
-                    <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger><SelectValue placeholder="Filter by status" /></SelectTrigger><SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="outstanding">Outstanding</SelectItem><SelectItem value="paid">Paid</SelectItem><SelectItem value="partial">Partial</SelectItem></SelectContent></Select>
-                    <Select value={gstFilter} onValueChange={setGstFilter}><SelectTrigger><SelectValue placeholder="Filter by GST" /></SelectTrigger><SelectContent><SelectItem value="all">All Bills</SelectItem><SelectItem value="gst">GST</SelectItem><SelectItem value="non-gst">Non-GST</SelectItem></SelectContent></Select>
+                  <Select value={customerFilter} onValueChange={setCustomerFilter}><SelectTrigger><SelectValue placeholder="Filter by customer" /></SelectTrigger><SelectContent><SelectItem value="all">All Customers</SelectItem>{customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger><SelectValue placeholder="Filter by status" /></SelectTrigger><SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="outstanding">Outstanding</SelectItem><SelectItem value="paid">Paid</SelectItem><SelectItem value="partial">Partial</SelectItem></SelectContent></Select>
+                  <Select value={gstFilter} onValueChange={setGstFilter}><SelectTrigger><SelectValue placeholder="Filter by GST" /></SelectTrigger><SelectContent><SelectItem value="all">All Bills</SelectItem><SelectItem value="gst">GST</SelectItem><SelectItem value="non-gst">Non-GST</SelectItem></SelectContent></Select>
                 </div>
-                
+
                 {/* Mobile View for All Bills */}
                 <div className="space-y-4 md:hidden">
                   {filteredBills.map((bill) => (
@@ -787,37 +768,37 @@ const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Custo
                 {/* Desktop View for All Bills */}
                 <div className="overflow-x-auto hidden md:block">
                   <Table>
-                      <TableHeader>
-                          <TableRow>
-                              <TableHead>Bill ID</TableHead>
-                              <TableHead>Customer</TableHead>
-                              <TableHead>Date</TableHead>
-                              <TableHead>Amount</TableHead>
-                              <TableHead>Status</TableHead>
-                              <TableHead>GST Bill</TableHead>
-                              <TableHead>Actions</TableHead>
-                          </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                          {filteredBills.map((bill) => (
-                          <TableRow key={bill.id}>
-                              <TableCell>#{bill.id.slice(0, 6)}...</TableCell>
-                              <TableCell>{bill.customers?.name || 'N/A'}</TableCell>
-                              <TableCell>{new Date(bill.date_of_bill).toLocaleDateString()}</TableCell>
-                              <TableCell>₹{bill.total_amount.toFixed(2)}</TableCell>
-                              <TableCell><Badge variant={bill.status === "paid" ? "default" : bill.status === "outstanding" ? "destructive" : "secondary"}>{bill.status}</Badge></TableCell>
-                              <TableCell>{bill.is_gst_bill ? "Yes" : "No"}</TableCell>
-                              <TableCell>
-                                <div className="flex space-x-2">
-                                  <Button variant="outline" size="sm" onClick={() => handleDownloadPdf(bill.id)}><Download className="mr-2 h-4 w-4" />PDF</Button>
-                                  <AlertDialogTrigger asChild>
-                                    <Button variant="destructive" size="sm" onClick={() => setBillToDelete(bill.id)}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
-                                  </AlertDialogTrigger>
-                                </div>
-                              </TableCell>
-                          </TableRow>
-                          ))}
-                      </TableBody>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Bill ID</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>GST Bill</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredBills.map((bill) => (
+                        <TableRow key={bill.id}>
+                          <TableCell>#{bill.id.slice(0, 6)}...</TableCell>
+                          <TableCell>{bill.customers?.name || 'N/A'}</TableCell>
+                          <TableCell>{new Date(bill.date_of_bill).toLocaleDateString()}</TableCell>
+                          <TableCell>₹{bill.total_amount.toFixed(2)}</TableCell>
+                          <TableCell><Badge variant={bill.status === "paid" ? "default" : bill.status === "outstanding" ? "destructive" : "secondary"}>{bill.status}</Badge></TableCell>
+                          <TableCell>{bill.is_gst_bill ? "Yes" : "No"}</TableCell>
+                          <TableCell>
+                            <div className="flex space-x-2">
+                              <Button variant="outline" size="sm" onClick={() => handleDownloadPdf(bill.id)}><Download className="mr-2 h-4 w-4" />PDF</Button>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="destructive" size="sm" onClick={() => setBillToDelete(bill.id)}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
+                              </AlertDialogTrigger>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
                   </Table>
                 </div>
               </CardContent>
