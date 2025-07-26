@@ -10,35 +10,24 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Edit, Trash2, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { Products } from "./Products"; // Import the Products component
 
 interface ExpenseCategory {
   id: string;
   name: string;
 }
 
-export const Admin = () => {
+const ExpenseCategoryManager = () => {
   const { toast } = useToast();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState("");
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<ExpenseCategory | null>(null);
   const [categoryName, setCategoryName] = useState("");
-
-  const ADMIN_PASSWORD = "password123"; // In a real app, use environment variables.
-
-  const handleLogin = () => {
-    if (password === ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
-      toast({ title: "Success", description: "Authenticated successfully." });
-    } else {
-      toast({ title: "Error", description: "Incorrect password.", variant: "destructive" });
-    }
-  };
 
   const fetchCategories = useCallback(async () => {
     setLoading(true);
@@ -52,10 +41,8 @@ export const Admin = () => {
   }, [toast]);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchCategories();
-    }
-  }, [isAuthenticated, fetchCategories]);
+    fetchCategories();
+  }, [fetchCategories]);
 
   const openDialog = (category?: ExpenseCategory) => {
     if (category) {
@@ -103,30 +90,10 @@ export const Admin = () => {
     }
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <Card className="w-full max-w-sm">
-          <CardHeader><CardTitle>Admin Access</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
-            </div>
-            <Button onClick={handleLogin} className="w-full">Login</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Admin Panel</h1>
-          <p className="text-muted-foreground">Manage expense categories</p>
-        </div>
+        <p className="text-muted-foreground">Manage expense categories for tracking payments.</p>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild><Button onClick={() => openDialog()}><Plus className="h-4 w-4 mr-2" />Add Category</Button></DialogTrigger>
           <DialogContent>
@@ -160,6 +127,60 @@ export const Admin = () => {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+};
+
+export const Admin = () => {
+  const { toast } = useToast();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState("");
+  const ADMIN_PASSWORD = "password123"; // In a real app, use environment variables.
+
+  const handleLogin = () => {
+    if (password === ADMIN_PASSWORD) {
+      setIsAuthenticated(true);
+      toast({ title: "Success", description: "Authenticated successfully." });
+    } else {
+      toast({ title: "Error", description: "Incorrect password.", variant: "destructive" });
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <Card className="w-full max-w-sm">
+          <CardHeader><CardTitle>Admin Access</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
+            </div>
+            <Button onClick={handleLogin} className="w-full">Login</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-foreground">Admin Panel</h1>
+        <p className="text-muted-foreground">Manage products and other administrative settings.</p>
+      </div>
+      <Tabs defaultValue="products">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="products">Products</TabsTrigger>
+          <TabsTrigger value="expense-categories">Expense Categories</TabsTrigger>
+        </TabsList>
+        <TabsContent value="products">
+          <Products />
+        </TabsContent>
+        <TabsContent value="expense-categories">
+          <ExpenseCategoryManager />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

@@ -113,6 +113,20 @@ CREATE TABLE transactions (
   date_of_transaction TIMESTAMPTZ DEFAULT now()
 );
 
+-- Create the damaged_stock_log table
+CREATE TABLE public.damaged_stock_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    product_id uuid NOT NULL,
+    quantity integer NOT NULL,
+    unit_cost numeric NOT NULL,
+    total_value numeric GENERATED ALWAYS AS ((quantity * unit_cost)) STORED,
+    reason text,
+    status text DEFAULT 'PENDING_ADJUSTMENT'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT damaged_stock_log_pkey PRIMARY KEY (id),
+    CONSTRAINT damaged_stock_log_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE
+);
+
 
 -- === DATABASE FUNCTIONS ===
 
@@ -295,6 +309,16 @@ BEGIN
 END;
 $ LANGUAGE plpgsql;
 
+-- Create the function to decrement stock
+CREATE OR REPLACE FUNCTION decrement_stock_from_damage(p_product_id uuid, p_quantity integer)
+RETURNS void AS $
+BEGIN
+  UPDATE inventory
+  SET quantity = quantity - p_quantity
+  WHERE product_id = p_product_id;
+END;
+$ LANGUAGE plpgsql SECURITY DEFINER;
+
 
 -- === ROW LEVEL SECURITY (RLS) ===
 
@@ -308,6 +332,8 @@ ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expense_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.damaged_stock_log ENABLE ROW LEVEL SECURITY;
+
 
 -- Note: These are placeholder policies. Adapt them to your authentication setup.
 CREATE POLICY "Allow all access to all users" ON customers FOR ALL USING (true) WITH CHECK (true);
@@ -320,6 +346,7 @@ CREATE POLICY "Allow all access to all users" ON order_items FOR ALL USING (true
 CREATE POLICY "Allow all access to all users" ON inventory_transactions FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to all users" ON expense_categories FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to all users" ON transactions FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public access to all users" ON public.damaged_stock_log FOR ALL USING (true) WITH CHECK (true);
 
 
 -- === INDEXES for Performance ===
@@ -335,3 +362,20 @@ CREATE INDEX idx_transactions_type ON transactions(type);
 CREATE INDEX idx_transactions_vendor_id ON transactions(vendor_id);
 CREATE INDEX idx_transactions_category_id ON transactions(category_id);
 CREATE INDEX idx_transactions_customer_id ON transactions(customer_id);
+
+
+-- === TRIGGERS ===
+
+-- Trigger to automatically update the 'updated_at' timestamp in the inventory table
+CREATE OR REPLACE FUNCTION update_inventory_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_inventory_timestamp
+BEFORE UPDATE ON inventory
+FOR EACH ROW
+EXECUTE FUNCTION update_inventory_timestamp();

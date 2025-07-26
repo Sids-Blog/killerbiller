@@ -10,6 +10,7 @@ import {
   X,
   LayoutDashboard,
   ShoppingCart,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +27,7 @@ const navigation = [
   { name: "Inventory", href: "/inventory", icon: Package },
   { name: "Payments", href: "/payments", icon: CreditCard },
   { name: "Customers", href: "/customers", icon: Users },
-  { name: "Products", href: "/products", icon: Settings },
+  { name: "Damaged Stock", href: "/damaged-stock", icon: Trash2 },
   { name: "Admin", href: "/admin", icon: Home },
   // Add more items as needed
 ];
