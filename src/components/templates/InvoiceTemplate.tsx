@@ -9,19 +9,18 @@ interface InvoiceTemplateProps {
 }
 
 const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billDetails, items, customerDetails }) => {
-  const today = new Date().toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-
-  // Calculate tax amounts (assuming 18% GST - 9% CGST + 9% SGST)
-  const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
-  const cgstRate = 9; // 9%
-  const sgstRate = 9; // 9%
-  const cgstAmount = (subtotal * cgstRate) / 100;
-  const sgstAmount = (subtotal * sgstRate) / 100;
-  const totalTaxAmount = cgstAmount + sgstAmount;
+  // Calculate tax amounts using database values
+  const subtotal = billDetails.total_amount || items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+  const cgstRate = billDetails.cgst_percentage || 9; // Use DB value or default to 9%
+  const sgstRate = billDetails.sgst_percentage || 9; // Use DB value or default to 9%
+  const cessRate = billDetails.cess_percentage || 0; // Use DB value or default to 0%
+  
+  // If it's a GST bill, use the stored GST amount, otherwise calculate
+  const totalTaxAmount = billDetails.is_gst_bill ? (billDetails.gst_amount || 0) : 0;
+  const cgstAmount = billDetails.is_gst_bill ? (subtotal * cgstRate) / 100 : 0;
+  const sgstAmount = billDetails.is_gst_bill ? (subtotal * sgstRate) / 100 : 0;
+  const cessAmount = billDetails.is_gst_bill ? (subtotal * cessRate) / 100 : 0;
+  
   const grandTotal = subtotal + totalTaxAmount - (billDetails.discount || 0);
 
   const tableStyle = {
@@ -83,7 +82,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billDetails, items, c
                 </tr>
                 <tr>
                   <td style={{ padding: '2px', fontWeight: 'bold' }}>Dated</td>
-                  <td style={{ padding: '2px' }}>{new Date(billDetails.created_at).toLocaleDateString('en-GB')}</td>
+                  <td style={{ padding: '2px' }}>{new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
                 </tr>
                 <tr>
                   <td style={{ padding: '2px', fontWeight: 'bold' }}>Delivery Note</td>
@@ -91,19 +90,23 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billDetails, items, c
                 </tr>
                 <tr>
                   <td style={{ padding: '2px', fontWeight: 'bold' }}>Reference No. & Date</td>
-                  <td style={{ padding: '2px' }}>Other References</td>
+                  <td style={{ padding: '2px' }}>{billDetails.id} dt. {new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
                 </tr>
                 <tr>
                   <td style={{ padding: '2px', fontWeight: 'bold' }}>Buyer's Order No.</td>
-                  <td style={{ padding: '2px' }}>Dated</td>
+                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Dated</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '2px' }}>-</td>
+                  <td style={{ padding: '2px' }}>{new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
                 </tr>
                 <tr>
                   <td style={{ padding: '2px', fontWeight: 'bold' }}>Dispatch Doc No.</td>
-                  <td style={{ padding: '2px' }}>Delivery Note Date</td>
+                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Delivery Note Date</td>
                 </tr>
                 <tr>
                   <td style={{ padding: '2px', fontWeight: 'bold' }}>Dispatched through</td>
-                  <td style={{ padding: '2px' }}>Destination</td>
+                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Destination</td>
                 </tr>
                 <tr>
                   <td style={{ padding: '2px', fontWeight: 'bold' }}>Terms of Delivery</td>
@@ -123,15 +126,15 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billDetails, items, c
               <div style={{ fontWeight: 'bold', marginBottom: '3px' }}>Consignee (Ship to)</div>
               <div style={{ fontWeight: 'bold' }}>{customerDetails.name}</div>
               <div>{customerDetails.address}</div>
-              <div>GSTIN/UIN: {customerDetails?.gst_number || 'N/A'}</div>
-              <div>State Name: {'TamilNadu'}</div>
+              <div>GSTIN/UIN: {customerDetails.gst_number || 'N/A'}</div>
+              <div>State Name: TamilNadu</div>
             </td>
             <td style={{ ...cellStyle, width: '50%' }}>
               <div style={{ fontWeight: 'bold', marginBottom: '3px' }}>Buyer (Bill to)</div>
               <div style={{ fontWeight: 'bold' }}>{customerDetails.name}</div>
               <div>{customerDetails.address}</div>
-              <div>GSTIN/UIN: {customerDetails?.gst_number || 'N/A'}</div>
-              <div>State Name: {'TamiNadu'}</div>
+              <div>GSTIN/UIN: {customerDetails.gst_number || 'N/A'}</div>
+              <div>State Name: TamilNadu</div>
             </td>
           </tr>
         </tbody>
@@ -167,30 +170,47 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billDetails, items, c
             </tr>
           ))}
           
-          {/* Tax rows */}
-          <tr>
-            <td style={cellStyle}></td>
-            <td style={cellStyle}></td>
-            <td style={cellStyle}>
-              <div>OUTPUT CGST @ {cgstRate}%</div>
-              <div>OUTPUT SGST @ {sgstRate}%</div>
-            </td>
-            <td style={cellStyle}></td>
-            <td style={cellStyle}></td>
-            <td style={{ ...cellStyle, textAlign: 'right' }}>{cgstRate}%</td>
-            <td style={cellStyle}></td>
-            <td style={{ ...cellStyle, textAlign: 'right' }}>{cgstAmount.toFixed(2)}</td>
-          </tr>
-          <tr>
-            <td style={cellStyle}></td>
-            <td style={cellStyle}></td>
-            <td style={cellStyle}></td>
-            <td style={cellStyle}></td>
-            <td style={cellStyle}></td>
-            <td style={{ ...cellStyle, textAlign: 'right' }}>{sgstRate}%</td>
-            <td style={cellStyle}></td>
-            <td style={{ ...cellStyle, textAlign: 'right' }}>{sgstAmount.toFixed(2)}</td>
-          </tr>
+          {/* Tax rows - only show if it's a GST bill */}
+          {billDetails.is_gst_bill && (
+            <>
+              <tr>
+                <td style={cellStyle}></td>
+                <td style={cellStyle}></td>
+                <td style={cellStyle}>
+                  <div>OUTPUT CGST @ {cgstRate}%</div>
+                  <div>OUTPUT SGST @ {sgstRate}%</div>
+                  {cessRate > 0 && <div>CESS @ {cessRate}%</div>}
+                </td>
+                <td style={cellStyle}></td>
+                <td style={cellStyle}></td>
+                <td style={{ ...cellStyle, textAlign: 'right' }}>{cgstRate}%</td>
+                <td style={cellStyle}></td>
+                <td style={{ ...cellStyle, textAlign: 'right' }}>{cgstAmount.toFixed(2)}</td>
+              </tr>
+              <tr>
+                <td style={cellStyle}></td>
+                <td style={cellStyle}></td>
+                <td style={cellStyle}></td>
+                <td style={cellStyle}></td>
+                <td style={cellStyle}></td>
+                <td style={{ ...cellStyle, textAlign: 'right' }}>{sgstRate}%</td>
+                <td style={cellStyle}></td>
+                <td style={{ ...cellStyle, textAlign: 'right' }}>{sgstAmount.toFixed(2)}</td>
+              </tr>
+              {cessRate > 0 && (
+                <tr>
+                  <td style={cellStyle}></td>
+                  <td style={cellStyle}></td>
+                  <td style={cellStyle}></td>
+                  <td style={cellStyle}></td>
+                  <td style={cellStyle}></td>
+                  <td style={{ ...cellStyle, textAlign: 'right' }}>{cessRate}%</td>
+                  <td style={cellStyle}></td>
+                  <td style={{ ...cellStyle, textAlign: 'right' }}>{cessAmount.toFixed(2)}</td>
+                </tr>
+              )}
+            </>
+          )}
 
           {/* Total row */}
           <tr>
@@ -203,7 +223,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billDetails, items, c
             </td>
             <td style={cellStyle}></td>
             <td style={cellStyle}></td>
-            <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>₹ {grandTotal.toFixed(2)}</td>
+            <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>₹ {(billDetails.total_amount || grandTotal).toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
@@ -216,58 +236,81 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billDetails, items, c
           </tr>
           <tr>
             <td style={{ ...cellStyle, height: '30px' }}>
-              INR {numberToWords(Math.round(grandTotal))} Only
+              INR {numberToWords(Math.round(billDetails.total_amount || grandTotal))} Only
             </td>
           </tr>
         </tbody>
       </table>
 
-      {/* Tax Summary Table */}
-      <table style={{ ...tableStyle, marginTop: '2px' }}>
-        <thead>
-          <tr>
-            <th style={headerCellStyle} rowSpan={2}>Taxable Value</th>
-            <th style={headerCellStyle} colSpan={2}>CGST</th>
-            <th style={headerCellStyle} colSpan={2}>SGST/UTGST</th>
-            <th style={headerCellStyle} rowSpan={2}>Total Tax Amount</th>
-          </tr>
-          <tr>
-            <th style={headerCellStyle}>Rate</th>
-            <th style={headerCellStyle}>Amount</th>
-            <th style={headerCellStyle}>Rate</th>
-            <th style={headerCellStyle}>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td style={{ ...cellStyle, textAlign: 'right' }}>{subtotal.toFixed(2)}</td>
-            <td style={{ ...cellStyle, textAlign: 'center' }}>{cgstRate}%</td>
-            <td style={{ ...cellStyle, textAlign: 'right' }}>{cgstAmount.toFixed(2)}</td>
-            <td style={{ ...cellStyle, textAlign: 'center' }}>{sgstRate}%</td>
-            <td style={{ ...cellStyle, textAlign: 'right' }}>{sgstAmount.toFixed(2)}</td>
-            <td style={{ ...cellStyle, textAlign: 'right' }}>{totalTaxAmount.toFixed(2)}</td>
-          </tr>
-          <tr>
-            <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>Total: {subtotal.toFixed(2)}</td>
-            <td style={cellStyle}></td>
-            <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{cgstAmount.toFixed(2)}</td>
-            <td style={cellStyle}></td>
-            <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{sgstAmount.toFixed(2)}</td>
-            <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{totalTaxAmount.toFixed(2)}</td>
-          </tr>
-        </tbody>
-      </table>
+      {/* Tax Summary Table - only show if it's a GST bill */}
+      {billDetails.is_gst_bill && (
+        <table style={{ ...tableStyle, marginTop: '2px' }}>
+          <thead>
+            <tr>
+              <th style={headerCellStyle} rowSpan={2}>Taxable Value</th>
+              <th style={headerCellStyle} colSpan={2}>CGST</th>
+              <th style={headerCellStyle} colSpan={2}>SGST/UTGST</th>
+              {cessRate > 0 && <th style={headerCellStyle} colSpan={2}>Cess</th>}
+              <th style={headerCellStyle} rowSpan={2}>Total Tax Amount</th>
+            </tr>
+            <tr>
+              <th style={headerCellStyle}>Rate</th>
+              <th style={headerCellStyle}>Amount</th>
+              <th style={headerCellStyle}>Rate</th>
+              <th style={headerCellStyle}>Amount</th>
+              {cessRate > 0 && (
+                <>
+                  <th style={headerCellStyle}>Rate</th>
+                  <th style={headerCellStyle}>Amount</th>
+                </>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style={{ ...cellStyle, textAlign: 'right' }}>{subtotal.toFixed(2)}</td>
+              <td style={{ ...cellStyle, textAlign: 'center' }}>{cgstRate}%</td>
+              <td style={{ ...cellStyle, textAlign: 'right' }}>{cgstAmount.toFixed(2)}</td>
+              <td style={{ ...cellStyle, textAlign: 'center' }}>{sgstRate}%</td>
+              <td style={{ ...cellStyle, textAlign: 'right' }}>{sgstAmount.toFixed(2)}</td>
+              {cessRate > 0 && (
+                <>
+                  <td style={{ ...cellStyle, textAlign: 'center' }}>{cessRate}%</td>
+                  <td style={{ ...cellStyle, textAlign: 'right' }}>{cessAmount.toFixed(2)}</td>
+                </>
+              )}
+              <td style={{ ...cellStyle, textAlign: 'right' }}>{(billDetails.gst_amount || totalTaxAmount).toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>Total: {subtotal.toFixed(2)}</td>
+              <td style={cellStyle}></td>
+              <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{cgstAmount.toFixed(2)}</td>
+              <td style={cellStyle}></td>
+              <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{sgstAmount.toFixed(2)}</td>
+              {cessRate > 0 && (
+                <>
+                  <td style={cellStyle}></td>
+                  <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{cessAmount.toFixed(2)}</td>
+                </>
+              )}
+              <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{(billDetails.gst_amount || totalTaxAmount).toFixed(2)}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
 
-      {/* Tax Amount in words */}
-      <table style={{ ...tableStyle, marginTop: '2px' }}>
-        <tbody>
-          <tr>
-            <td style={{ ...cellStyle, fontWeight: 'bold' }}>
-              Tax Amount (in words): INR {numberToWords(Math.round(totalTaxAmount))} Only
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      {/* Tax Amount in words - only show if it's a GST bill */}
+      {billDetails.is_gst_bill && (
+        <table style={{ ...tableStyle, marginTop: '2px' }}>
+          <tbody>
+            <tr>
+              <td style={{ ...cellStyle, fontWeight: 'bold' }}>
+                Tax Amount (in words): INR {numberToWords(Math.round(billDetails.gst_amount || totalTaxAmount))} Only
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
 
       {/* Bank Details and Declaration */}
       <table style={{ ...tableStyle, marginTop: '2px' }}>

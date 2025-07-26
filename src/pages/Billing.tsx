@@ -537,6 +537,9 @@ const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Custo
         comments: comments,
         date_of_bill: billDate?.toISOString(),
         is_gst_bill: isGstBill,
+        sgst_percentage: isGstBill ? sgstPercent : null,
+        cgst_percentage: isGstBill ? cgstPercent : null,
+        cess_percentage: isGstBill ? cessPercent : null,
         gst_amount: sgst + cgst + cess,
       })
       .select()
