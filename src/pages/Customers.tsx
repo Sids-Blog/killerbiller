@@ -37,7 +37,7 @@ import { supabase } from "@/lib/supabase";
 import { Plus, Edit } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
-interface Customer {
+export interface Customer {
   id: string;
   name: string;
   primary_phone_number: string;

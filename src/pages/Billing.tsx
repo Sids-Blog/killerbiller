@@ -36,15 +36,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Trash2, Plus, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { Checkbox } from "@/components/ui/checkbox";
+import html2pdf from 'html2pdf.js';
+import InvoiceTemplate from '@/components/templates/InvoiceTemplate';
+import { createRoot } from 'react-dom/client';
+import { Customer } from "./Customers";
 
 // Interfaces
-interface BillItem {
+export interface BillItem {
   product_id: string;
   product_name: string;
   master_lot_size: number;
@@ -52,14 +54,6 @@ interface BillItem {
   quantity: number;
   price: number;
   lot_price: number;
-}
-
-interface Customer {
-  id: string;
-  name: string;
-  primary_phone_number: string;
-  address: string;
-  gst_number: string;
 }
 
 interface Product {
@@ -134,7 +128,7 @@ export const Billing = () => {
     setLoading(true);
     const customerPromise = supabase
       .from("customers")
-      .select("id, name, primary_phone_number, address, gst_number")
+      .select("*")
       .eq("is_active", true)
       .eq("type", "customer");
     const productPromise = supabase
@@ -305,71 +299,175 @@ export const Billing = () => {
     };
   }, [billItems, discount, isGstBill, sgstPercent, cgstPercent, cessPercent]);
 
-  const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Customer) => {
-    const doc = new jsPDF();
+const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Customer) => {
+  // Create a visible container first for debugging
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.top = '0';
+  container.style.left = '0';
+  container.style.width = '100vw';
+  container.style.height = '100vh';
+  container.style.backgroundColor = 'rgba(0,0,0,0.8)';
+  container.style.zIndex = '9999';
+  container.style.overflowY = 'auto';
+  container.style.display = 'flex';
+  container.style.justifyContent = 'center';
+  container.style.alignItems = 'flex-start';
+  container.style.padding = '20px';
+  document.body.appendChild(container);
 
-    // Bill Header
-    doc.setFontSize(20);
-    doc.text("Bill/Invoice", 105, 20, { align: "center" });
+  // Create the actual content wrapper
+  const wrapper = document.createElement('div');
+  wrapper.style.width = '800px'; // Fixed width instead of mm units
+  wrapper.style.minHeight = '1000px';
+  wrapper.style.backgroundColor = 'white';
+  wrapper.style.padding = '20px';
+  wrapper.style.boxSizing = 'border-box';
+  wrapper.style.fontFamily = 'Arial, sans-serif';
+  wrapper.style.fontSize = '12px';
+  wrapper.style.color = '#000';
+  container.appendChild(wrapper);
 
-    // Customer Details
-    doc.setFontSize(12);
-    doc.text(`Bill To: ${customerDetails.name}`, 14, 40);
-    doc.text(`Address: ${customerDetails.address}`, 14, 48);
-    doc.text(`Phone: ${customerDetails.primary_phone_number}`, 14, 56);
-    if (customerDetails.gst_number) {
-      doc.text(`GSTIN: ${customerDetails.gst_number}`, 14, 64);
+  // Render the React component
+  const root = createRoot(wrapper);
+  root.render(
+    <InvoiceTemplate 
+      billDetails={billDetails} 
+      items={items} 
+      customerDetails={customerDetails} 
+    />
+  );
+
+  // Simplified PDF options
+  const opt = {
+    margin: 0.5,
+    filename: `tax_invoice_${billDetails.id}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { 
+      scale: 2,
+      useCORS: true,
+      logging: true, // Enable logging for debugging
+      backgroundColor: '#ffffff'
+    },
+    jsPDF: { 
+      unit: 'in', 
+      format: 'letter', 
+      orientation: 'portrait' 
     }
+  };
 
-    // Bill Details
-    doc.text(`Bill ID: #${billDetails.id.slice(0, 13)}`, 196, 40, { align: "right" });
-    doc.text(`Date: ${new Date(billDetails.date_of_bill).toLocaleDateString()}`, 196, 48, { align: "right" });
+  // Add close button for debugging
+  const closeButton = document.createElement('button');
+  closeButton.innerHTML = 'Generate PDF';
+  closeButton.style.position = 'absolute';
+  closeButton.style.top = '10px';
+  closeButton.style.right = '10px';
+  closeButton.style.padding = '10px 20px';
+  closeButton.style.backgroundColor = '#007bff';
+  closeButton.style.color = 'white';
+  closeButton.style.border = 'none';
+  closeButton.style.borderRadius = '5px';
+  closeButton.style.cursor = 'pointer';
+  closeButton.style.zIndex = '10000';
+  container.appendChild(closeButton);
 
-    // Bill Items Table
-    autoTable(doc, {
-      startY: 75,
-      head: [['Product', 'Quantity', 'Price/Unit', 'Total']],
-      body: items.map(item => [
-        item.product_name,
-        item.quantity,
-        `₹${item.price.toFixed(2)}`,
-        `₹${(item.quantity * item.price).toFixed(2)}`
-      ]),
-      theme: 'striped',
-      headStyles: { fillColor: [38, 38, 38] },
-    });
+  closeButton.onclick = () => {
+    // Generate PDF when button is clicked
+    console.log('Starting PDF generation...');
+    html2pdf()
+      .from(wrapper)
+      .set(opt)
+      .save()
+      .then(() => {
+        console.log('PDF generated successfully');
+        // Cleanup
+        root.unmount();
+        document.body.removeChild(container);
+      })
+      .catch((err: any) => {
+        console.error("PDF generation error:", err);
+        alert('Error generating PDF: ' + err.message);
+        // Cleanup
+        root.unmount();
+        if (document.body.contains(container)) {
+          document.body.removeChild(container);
+        }
+      });
+  };
 
-    // Totals
-    const finalY = (doc as any).lastAutoTable.finalY;
-    const subtotal = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
-    const discount = billDetails.discount || 0;
-    const grandTotal = subtotal - discount;
+  // Auto-generate after a delay (you can remove this if you want manual control)
+  setTimeout(() => {
+    console.log('Auto-generating PDF...');
+    closeButton.click();
+  }, 2000);
+};
 
-    doc.setFontSize(12);
-    doc.text(`Subtotal:`, 150, finalY + 10, { align: "right" });
-    doc.text(`₹${subtotal.toFixed(2)}`, 196, finalY + 10, { align: "right" });
-    doc.text(`Discount:`, 150, finalY + 17, { align: "right" });
-    doc.text(`- ₹${discount.toFixed(2)}`, 196, finalY + 17, { align: "right" });
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`Grand Total:`, 150, finalY + 25, { align: "right" });
-    doc.text(`₹${grandTotal.toFixed(2)}`, 196, finalY + 25, { align: "right" });
-
-    // Comments
-    if (billDetails.comments) {
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.text('Comments:', 14, finalY + 40);
-        const splitComments = doc.splitTextToSize(billDetails.comments, 182);
-        doc.text(splitComments, 14, finalY + 45);
-    }
-
-    // Footer
-    doc.setFontSize(10);
-    doc.text("Thank you for your business!", 105, 280, { align: "center" });
-
-
-    doc.save(`bill_${billDetails.id}.pdf`);
+// Alternative function for preview (shows PDF content in modal)
+  const previewInvoice = (billDetails: any, items: BillItem[], customerDetails: Customer) => {
+    // Create a modal container
+    const modal = document.createElement('div');
+    modal.style.position = 'fixed';
+    modal.style.top = '0';
+    modal.style.left = '0';
+    modal.style.width = '100%';
+    modal.style.height = '100%';
+    modal.style.backgroundColor = 'rgba(0,0,0,0.8)';
+    modal.style.zIndex = '10000';
+    modal.style.display = 'flex';
+    modal.style.justifyContent = 'center';
+    modal.style.alignItems = 'center';
+    modal.style.overflowY = 'auto';
+    
+    // Create content container
+    const content = document.createElement('div');
+    content.style.backgroundColor = 'white';
+    content.style.maxWidth = '90%';
+    content.style.maxHeight = '90%';
+    content.style.overflow = 'auto';
+    content.style.position = 'relative';
+    content.style.borderRadius = '8px';
+    content.style.boxShadow = '0 10px 30px rgba(0,0,0,0.3)';
+    
+    // Close button
+    const closeButton = document.createElement('button');
+    closeButton.innerHTML = '×';
+    closeButton.style.position = 'absolute';
+    closeButton.style.top = '10px';
+    closeButton.style.right = '15px';
+    closeButton.style.background = 'none';
+    closeButton.style.border = 'none';
+    closeButton.style.fontSize = '24px';
+    closeButton.style.cursor = 'pointer';
+    closeButton.style.zIndex = '10001';
+    closeButton.style.color = '#666';
+    closeButton.onclick = () => {
+      root.unmount();
+      document.body.removeChild(modal);
+    };
+    
+    content.appendChild(closeButton);
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+    
+    // Render the invoice
+    const root = createRoot(content);
+    root.render(
+      <div style={{ padding: '20px' }}>
+        <InvoiceTemplate 
+          billDetails={billDetails} 
+          items={items} 
+          customerDetails={customerDetails} 
+        />
+      </div>
+    );
+    
+    // Close modal when clicking outside
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        root.unmount();
+        document.body.removeChild(modal);
+      }
+    };
   };
 
   const handleDownloadPdf = async (billId: string) => {
@@ -416,7 +514,8 @@ export const Billing = () => {
     }));
 
 
-    generatePdf(billDetails, itemsForPdf, customer);
+    //generatePdf(billDetails, itemsForPdf, customer);
+    previewInvoice(billDetails, itemsForPdf, customer);
     setLoading(false);
   };
 
