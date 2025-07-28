@@ -174,7 +174,7 @@ const UserManagement = () => {
                   </div>
                   <div className="flex gap-2">
                     <Button variant="ghost" size="icon" onClick={() => openDialog(user)}><Edit className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => deleteUser(user.id)}><Trash2 className="h-4 w-4" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => deleteUser(user.id)} disabled={user.role_name === 'admin'}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </div>
               ))}
