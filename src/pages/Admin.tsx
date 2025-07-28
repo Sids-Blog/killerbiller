@@ -92,35 +92,92 @@ const ExpenseCategoryManager = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <p className="text-muted-foreground">Manage expense categories for tracking payments.</p>
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
+        <p className="text-muted-foreground text-sm sm:text-base">Manage expense categories for tracking payments.</p>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild><Button onClick={() => openDialog()}><Plus className="h-4 w-4 mr-2" />Add Category</Button></DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>{editingCategory ? "Edit Category" : "Add New Category"}</DialogTitle></DialogHeader>
-            <div className="py-4 space-y-2">
-              <Label htmlFor="categoryName">Category Name</Label>
-              <Input id="categoryName" value={categoryName} onChange={(e) => setCategoryName(e.target.value)} />
+          <DialogTrigger asChild>
+            <Button 
+              onClick={() => openDialog()}
+              className="w-full sm:w-auto text-sm"
+              size="sm"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Category
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="w-[95vw] max-w-md mx-auto">
+            <DialogHeader>
+              <DialogTitle className="text-lg sm:text-xl">
+                {editingCategory ? "Edit Category" : "Add New Category"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-4 space-y-3">
+              <Label htmlFor="categoryName" className="text-sm font-medium">Category Name</Label>
+              <Input 
+                id="categoryName" 
+                value={categoryName} 
+                onChange={(e) => setCategoryName(e.target.value)}
+                className="text-sm"
+                placeholder="Enter category name"
+              />
             </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button onClick={saveCategory}>{editingCategory ? "Update" : "Create"}</Button>
+            <div className="flex flex-col sm:flex-row justify-end gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setIsDialogOpen(false)}
+                className="w-full sm:w-auto text-sm"
+                size="sm"
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={saveCategory}
+                className="w-full sm:w-auto text-sm"
+                size="sm"
+              >
+                {editingCategory ? "Update" : "Create"}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
       </div>
+      
       <Card>
-        <CardHeader><CardTitle>Expense Categories</CardTitle></CardHeader>
+        <CardHeader className="pb-3 sm:pb-6">
+          <CardTitle className="text-lg sm:text-xl">Expense Categories</CardTitle>
+        </CardHeader>
         <CardContent>
-          {loading ? <p>Loading...</p> : (
-            <div className="space-y-2">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            </div>
+          ) : categories.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-sm text-muted-foreground">No categories found. Add your first category to get started.</p>
+            </div>
+          ) : (
+            <div className="space-y-2 sm:space-y-3">
               {categories.map(cat => (
-                <div key={cat.id} className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                  <span className="font-medium">{cat.name}</span>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => openDialog(cat)}><Edit className="h-4 w-4" /></Button>
-                    <Button variant="ghost" size="icon" onClick={() => deleteCategory(cat.id)}><Trash2 className="h-4 w-4" /></Button>
+                <div key={cat.id} className="flex justify-between items-center p-3 sm:p-4 bg-muted rounded-lg">
+                  <span className="font-medium text-sm sm:text-base truncate pr-2">{cat.name}</span>
+                  <div className="flex gap-1 sm:gap-2 flex-shrink-0">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => openDialog(cat)}
+                      className="h-8 w-8 sm:h-9 sm:w-9"
+                    >
+                      <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => deleteCategory(cat.id)}
+                      className="h-8 w-8 sm:h-9 sm:w-9 text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -137,24 +194,46 @@ export const Admin = () => {
   // No need for a separate loading or access check here.
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Admin Panel</h1>
-        <p className="text-muted-foreground">Manage products and other administrative settings.</p>
+    <div className="space-y-4 sm:space-y-6 p-4 sm:p-6">
+      <div className="space-y-2">
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Admin Panel</h1>
+        <p className="text-muted-foreground text-sm sm:text-base">
+          Manage products and other administrative settings.
+        </p>
       </div>
-      <Tabs defaultValue="products">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="products">Products</TabsTrigger>
-          <TabsTrigger value="expense-categories">Expense Categories</TabsTrigger>
-          <TabsTrigger value="user-management">User Management</TabsTrigger>
+      
+      <Tabs defaultValue="products" className="w-full">
+        <TabsList className="grid w-full grid-cols-3 h-auto p-1">
+          <TabsTrigger
+            value="products"
+            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+          >
+            <span className="hidden sm:inline">Products</span>
+            <span className="sm:hidden">Products</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="expense-categories"
+            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+          >
+            <span className="hidden sm:inline">Expense Categories</span>
+            <span className="sm:hidden">Categories</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="user-management"
+            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+          >
+            <span className="hidden sm:inline">User Management</span>
+            <span className="sm:hidden">Users</span>
+          </TabsTrigger>
         </TabsList>
-        <TabsContent value="products">
+
+        <TabsContent value="products" className="mt-4 sm:mt-6">
           <Products />
         </TabsContent>
-        <TabsContent value="expense-categories">
+        <TabsContent value="expense-categories" className="mt-4 sm:mt-6">
           <ExpenseCategoryManager />
         </TabsContent>
-        <TabsContent value="user-management">
+        <TabsContent value="user-management" className="mt-4 sm:mt-6">
           <UserManagement />
         </TabsContent>
       </Tabs>
