@@ -172,7 +172,7 @@ export const Billing = () => {
     if (orderState && products.length > 0 && customers.length > 0) {
       setSelectedCustomer(orderState.customer_id);
       setOrderId(orderState.id);
-      const items = orderState.order_items.map((item: any) => {
+      const items = orderState.order_items.map((item: { product_id: string; quantity: number }) => {
         const product = products.find(p => p.id === item.product_id);
         return {
           product_id: item.product_id,
@@ -321,7 +321,7 @@ export const Billing = () => {
     };
   }, [billItems, discount, isGstBill, sgstPercent, cgstPercent, cessPercent]);
 
-  const generatePdf = (billDetails: any, items: BillItem[], customerDetails: Customer) => {
+  const generatePdf = (billDetails: Bill, items: BillItem[], customerDetails: Customer) => {
     // Create a temporary, hidden container for rendering
     const container = document.createElement('div');
     container.style.position = 'absolute';
@@ -359,7 +359,7 @@ export const Billing = () => {
           root.unmount();
           document.body.removeChild(container);
         })
-        .catch((err: any) => {
+        .catch((err: Error) => {
           console.error("PDF generation error:", err);
           // Ensure cleanup happens even if there's an error
           root.unmount();
@@ -370,7 +370,7 @@ export const Billing = () => {
     }, 500);
   };
 
-  const previewInvoice = (billDetails: any, items: BillItem[], customerDetails: Customer) => {
+  const previewInvoice = (billDetails: Bill, items: BillItem[], customerDetails: Customer) => {
     // Create a modal container
     const modal = document.createElement('div');
     modal.style.position = 'fixed';
@@ -471,7 +471,7 @@ export const Billing = () => {
       return;
     }
 
-    const itemsForPdf: BillItem[] = billItemsData.map((item: any) => ({
+    const itemsForPdf: BillItem[] = billItemsData.map((item: { product_id: string; products: { name: string }; quantity: number; price: number }) => ({
       product_id: item.product_id,
       product_name: item.products?.name || 'Unknown Product',
       quantity: item.quantity,

@@ -123,7 +123,7 @@ export const Products = () => {
     fetchData();
   }, [fetchData]);
 
-  const handleFormDataChange = (field: string, value: any) => {
+  const handleFormDataChange = (field: string, value: string | number) => {
     const newFormData = { ...formData, [field]: value };
     if (
       (field === "lot_price" || field === "lot_size") &&

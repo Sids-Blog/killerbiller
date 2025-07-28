@@ -2,6 +2,22 @@ import { BillItem } from '@/pages/Billing';
 import { Customer } from '@/pages/Customers';
 import React from 'react';
 
+interface Bill {
+  id: string;
+  created_at: string;
+  date_of_bill: string;
+  total_amount: number;
+  status: 'outstanding' | 'paid' | 'partial';
+  is_gst_bill: boolean;
+  customers: { name: string } | null;
+  cgst_percentage?: number;
+  sgst_percentage?: number;
+  cess_percentage?: number;
+  gst_amount?: number;
+  discount?: number;
+  comments?: string;
+}
+
 interface InvoiceTemplateProps {
   billCalculations: {
     sgst: number;
@@ -11,7 +27,7 @@ interface InvoiceTemplateProps {
     subtotal: number;
     grandTotal: number;
   }
-  billDetails: any;
+  billDetails: Bill;
   items: BillItem[];
   customerDetails: Customer;
 }

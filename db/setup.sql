@@ -1,7 +1,15 @@
 -- This is a consolidated setup file reflecting the final database schema.
+-- It is designed to be idempotent, meaning it can be run multiple times without causing errors.
+
+-- Drop existing structures if they exist to ensure a clean slate for changes
+DROP TABLE IF EXISTS public.user_roles CASCADE;
+DROP TABLE IF EXISTS public.users CASCADE;
+DROP TABLE IF EXISTS public.roles CASCADE;
+DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
+DROP FUNCTION IF EXISTS get_users_with_roles();
 
 -- Create Customers table (for both customers and vendors)
-CREATE TABLE customers (
+CREATE TABLE IF NOT EXISTS customers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   primary_phone_number TEXT UNIQUE NOT NULL,
@@ -17,7 +25,7 @@ CREATE TABLE customers (
 );
 
 -- Create Products table
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   price NUMERIC(10, 2) NOT NULL, -- Price per unit
@@ -28,7 +36,7 @@ CREATE TABLE products (
 );
 
 -- Create Inventory table
-CREATE TABLE inventory (
+CREATE TABLE IF NOT EXISTS inventory (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_id UUID REFERENCES products(id) ON DELETE CASCADE,
   quantity INTEGER DEFAULT 0,
@@ -37,7 +45,7 @@ CREATE TABLE inventory (
 );
 
 -- Create Bills table
-CREATE TABLE bills (
+CREATE TABLE IF NOT EXISTS bills (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
   total_amount NUMERIC(10, 2) NOT NULL,
@@ -56,7 +64,7 @@ CREATE TABLE bills (
 );
 
 -- Create Bill Items table
-CREATE TABLE bill_items (
+CREATE TABLE IF NOT EXISTS bill_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   bill_id UUID REFERENCES bills(id) ON DELETE CASCADE,
   product_id UUID REFERENCES products(id) ON DELETE SET NULL,
@@ -65,7 +73,7 @@ CREATE TABLE bill_items (
 );
 
 -- Create Orders table
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
   status TEXT NOT NULL DEFAULT 'pending', -- pending, fulfilled
@@ -74,7 +82,7 @@ CREATE TABLE orders (
 );
 
 -- Create Order Items table
-CREATE TABLE order_items (
+CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
   product_id UUID REFERENCES products(id) ON DELETE SET NULL,
@@ -83,7 +91,7 @@ CREATE TABLE order_items (
 );
 
 -- Create Inventory Transactions table (for logging stock changes)
-CREATE TABLE inventory_transactions (
+CREATE TABLE IF NOT EXISTS inventory_transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_id UUID REFERENCES products(id) ON DELETE CASCADE NOT NULL,
   vendor_id UUID REFERENCES customers(id) ON DELETE SET NULL,
@@ -93,14 +101,14 @@ CREATE TABLE inventory_transactions (
 );
 
 -- Create Expense Categories table
-CREATE TABLE expense_categories (
+CREATE TABLE IF NOT EXISTS expense_categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL UNIQUE,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Create unified Transactions table (for revenue and expenses)
-CREATE TABLE transactions (
+CREATE TABLE IF NOT EXISTS transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   amount NUMERIC(10, 2) NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('revenue', 'expense')),
@@ -114,7 +122,7 @@ CREATE TABLE transactions (
 );
 
 -- Create the damaged_stock_log table
-CREATE TABLE public.damaged_stock_log (
+CREATE TABLE IF NOT EXISTS public.damaged_stock_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     product_id uuid NOT NULL,
     quantity integer NOT NULL,
@@ -127,8 +135,82 @@ CREATE TABLE public.damaged_stock_log (
     CONSTRAINT damaged_stock_log_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE
 );
 
+-- Create Roles table
+CREATE TABLE public.roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Create public.users table
+CREATE TABLE public.users (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  username TEXT UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Create User_Roles table
+CREATE TABLE public.user_roles (
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, role_id)
+);
+
+-- Insert default roles
+INSERT INTO roles (name, description) VALUES
+  ('admin', 'Administrator with full access'),
+  ('manager', 'Manager with access to most features'),
+  ('staff', 'Staff with limited access')
+ON CONFLICT (name) DO NOTHING;
+
 
 -- === DATABASE FUNCTIONS ===
+
+-- Function to populate public.users on new user signup
+CREATE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.users (id, username)
+  VALUES (
+    new.id,
+    COALESCE(new.raw_user_meta_data->>'username', new.email) -- Fallback to email
+  );
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger to call the function
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+
+-- Function to get users with their roles
+CREATE FUNCTION get_users_with_roles()
+RETURNS TABLE(id UUID, username TEXT, role_name TEXT) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    u.id,
+    pu.username,
+    r.name as role_name
+  FROM auth.users u
+  LEFT JOIN public.users pu ON u.id = pu.id
+  LEFT JOIN public.user_roles ur ON u.id = ur.user_id
+  LEFT JOIN public.roles r ON ur.role_id = r.id
+  ORDER BY pu.username;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to delete a user from auth schema
+CREATE OR REPLACE FUNCTION delete_user(user_id_to_delete UUID)
+RETURNS void AS $$
+BEGIN
+  DELETE FROM auth.users WHERE id = user_id_to_delete;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Function to decrement stock
 CREATE OR REPLACE FUNCTION decrement_stock(p_product_id UUID, p_quantity INTEGER)
@@ -253,7 +335,7 @@ RETURNS TABLE(
     daily_expense NUMERIC,
     weekly_expense NUMERIC,
     monthly_expense NUMERIC
-) AS $
+) AS $$
 BEGIN
   RETURN QUERY
   SELECT
@@ -264,11 +346,11 @@ BEGIN
     (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND date_of_transaction >= now() - interval '7 days') as weekly_expense,
     (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND date_of_transaction >= now() - interval '30 days') as monthly_expense;
 END;
-$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql;
 
 -- Function to delete a bill and handle all related data
 CREATE OR REPLACE FUNCTION delete_bill(p_bill_id UUID)
-RETURNS VOID AS $
+RETURNS VOID AS $$
 DECLARE
   bill_to_delete RECORD;
   item_to_revert RECORD;
@@ -307,17 +389,17 @@ BEGIN
   DELETE FROM bills WHERE id = p_bill_id;
 
 END;
-$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql;
 
 -- Create the function to decrement stock
 CREATE OR REPLACE FUNCTION decrement_stock_from_damage(p_product_id uuid, p_quantity integer)
-RETURNS void AS $
+RETURNS void AS $$
 BEGIN
   UPDATE inventory
   SET quantity = quantity - p_quantity
   WHERE product_id = p_product_id;
 END;
-$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 
 -- === ROW LEVEL SECURITY (RLS) ===
@@ -333,35 +415,55 @@ ALTER TABLE inventory_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expense_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.damaged_stock_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
 
 -- Note: These are placeholder policies. Adapt them to your authentication setup.
+DROP POLICY IF EXISTS "Allow all access to all users" ON customers;
 CREATE POLICY "Allow all access to all users" ON customers FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON products;
 CREATE POLICY "Allow all access to all users" ON products FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON inventory;
 CREATE POLICY "Allow all access to all users" ON inventory FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON bills;
 CREATE POLICY "Allow all access to all users" ON bills FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON bill_items;
 CREATE POLICY "Allow all access to all users" ON bill_items FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON orders;
 CREATE POLICY "Allow all access to all users" ON orders FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON order_items;
 CREATE POLICY "Allow all access to all users" ON order_items FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON inventory_transactions;
 CREATE POLICY "Allow all access to all users" ON inventory_transactions FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON expense_categories;
 CREATE POLICY "Allow all access to all users" ON expense_categories FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON transactions;
 CREATE POLICY "Allow all access to all users" ON transactions FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public access to all users" ON public.damaged_stock_log;
 CREATE POLICY "Allow public access to all users" ON public.damaged_stock_log FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON roles;
+CREATE POLICY "Allow all access to all users" ON roles FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON user_roles;
+CREATE POLICY "Allow all access to all users" ON user_roles FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON public.users;
+CREATE POLICY "Allow all access to all users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 
 
 -- === INDEXES for Performance ===
 
-CREATE INDEX idx_customers_name ON customers(name);
-CREATE INDEX idx_products_name ON products(name);
-CREATE INDEX idx_bills_customer_id ON bills(customer_id);
-CREATE INDEX idx_bills_status ON bills(status);
-CREATE INDEX idx_bill_items_bill_id ON bill_items(bill_id);
-CREATE INDEX idx_orders_customer_id ON orders(customer_id);
-CREATE INDEX idx_order_items_order_id ON order_items(order_id);
-CREATE INDEX idx_transactions_type ON transactions(type);
-CREATE INDEX idx_transactions_vendor_id ON transactions(vendor_id);
-CREATE INDEX idx_transactions_category_id ON transactions(category_id);
-CREATE INDEX idx_transactions_customer_id ON transactions(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
+CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+CREATE INDEX IF NOT EXISTS idx_bills_customer_id ON bills(customer_id);
+CREATE INDEX IF NOT EXISTS idx_bills_status ON bills(status);
+CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON bill_items(bill_id);
+CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
+CREATE INDEX IF NOT EXISTS idx_transactions_vendor_id ON transactions(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_category_id ON transactions(category_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_customer_id ON transactions(customer_id);
 
 
 -- === TRIGGERS ===
@@ -375,6 +477,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_update_inventory_timestamp ON inventory;
 CREATE TRIGGER trigger_update_inventory_timestamp
 BEFORE UPDATE ON inventory
 FOR EACH ROW

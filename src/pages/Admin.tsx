@@ -1,4 +1,3 @@
-import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +14,8 @@ import { Edit, Trash2, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { Products } from "./Products"; // Import the Products component
+import UserManagement from "./UserManagement";
+import { useState, useEffect, useCallback } from "react";
 
 interface ExpenseCategory {
   id: string;
@@ -132,36 +133,8 @@ const ExpenseCategoryManager = () => {
 };
 
 export const Admin = () => {
-  const { toast } = useToast();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState("");
-  const ADMIN_PASSWORD = "password123"; // In a real app, use environment variables.
-
-  const handleLogin = () => {
-    if (password === ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
-      toast({ title: "Success", description: "Authenticated successfully." });
-    } else {
-      toast({ title: "Error", description: "Incorrect password.", variant: "destructive" });
-    }
-  };
-
-  if (!isAuthenticated) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <Card className="w-full max-w-sm">
-          <CardHeader><CardTitle>Admin Access</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
-            </div>
-            <Button onClick={handleLogin} className="w-full">Login</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // The ProtectedRoute component already ensures that only admins can access this page.
+  // No need for a separate loading or access check here.
 
   return (
     <div className="space-y-6">
@@ -170,15 +143,19 @@ export const Admin = () => {
         <p className="text-muted-foreground">Manage products and other administrative settings.</p>
       </div>
       <Tabs defaultValue="products">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="products">Products</TabsTrigger>
           <TabsTrigger value="expense-categories">Expense Categories</TabsTrigger>
+          <TabsTrigger value="user-management">User Management</TabsTrigger>
         </TabsList>
         <TabsContent value="products">
           <Products />
         </TabsContent>
         <TabsContent value="expense-categories">
           <ExpenseCategoryManager />
+        </TabsContent>
+        <TabsContent value="user-management">
+          <UserManagement />
         </TabsContent>
       </Tabs>
     </div>

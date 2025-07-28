@@ -1,14 +1,24 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useAuth } from "@/hooks/useAuth";
+import { Loader2 } from "lucide-react";
+import { Navigate } from "react-router-dom";
 
-const Index = () => {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+export const Index = () => {
+  const { session, loading, role } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
-    </div>
-  );
-};
+    );
+  }
 
-export default Index;
+  if (session) {
+    if (role === 'staff') {
+      return <Navigate to="/orders" replace />;
+    }
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <Navigate to="/auth" replace />;
+};

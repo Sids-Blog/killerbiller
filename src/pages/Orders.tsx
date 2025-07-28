@@ -94,7 +94,7 @@ export const Orders = () => {
   // Edit Modal states
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
-  const [editedItems, setEditedItems] = useState<any[]>([]);
+  const [editedItems, setEditedItems] = useState<{ id: string; product_name: string; master_lot_size: number; lots: string; quantity: number }[]>([]);
   const [editedComments, setEditedComments] = useState("");
 
   const fetchData = useCallback(async () => {

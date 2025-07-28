@@ -1,16 +1,16 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
   Package,
   Receipt,
   CreditCard,
   Users,
-  Settings,
   Home,
   X,
   LayoutDashboard,
   ShoppingCart,
   Trash2,
+  LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,17 +19,19 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/lib/supabase";
+import { useToast } from "@/hooks/use-toast";
 
-const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Billing", href: "/billing", icon: Receipt },
-  { name: "Orders", href: "/orders", icon: ShoppingCart },
-  { name: "Inventory", href: "/inventory", icon: Package },
-  { name: "Payments", href: "/payments", icon: CreditCard },
-  { name: "Customers", href: "/customers", icon: Users },
-  { name: "Damaged Stock", href: "/damaged-stock", icon: Trash2 },
-  { name: "Admin", href: "/admin", icon: Home },
-  // Add more items as needed
+const allNavigation = [
+  { name: "Dashboard", href: "/", icon: LayoutDashboard, roles: ['admin', 'manager'] },
+  { name: "Billing", href: "/billing", icon: Receipt, roles: ['admin', 'manager'] },
+  { name: "Orders", href: "/orders", icon: ShoppingCart, roles: ['admin', 'manager', 'staff'] },
+  { name: "Inventory", href: "/inventory", icon: Package, roles: ['admin', 'manager'] },
+  { name: "Payments", href: "/payments", icon: CreditCard, roles: ['admin', 'manager'] },
+  { name: "Customers", href: "/customers", icon: Users, roles: ['admin', 'manager'] },
+  { name: "Damaged Stock", href: "/damaged-stock", icon: Trash2, roles: ['admin', 'manager'] },
+  { name: "Admin", href: "/admin", icon: Home, roles: ['admin'] },
 ];
 
 interface SidebarProps {
@@ -46,6 +48,17 @@ export const Sidebar = ({
   onClose,
 }: SidebarProps) => {
   const location = useLocation();
+  const { role } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const navigation = allNavigation.filter(item => item.roles.includes(role || ''));
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    toast({ title: "Logged out", description: "You have been successfully logged out." });
+    navigate('/auth');
+  };
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -117,6 +130,29 @@ export const Sidebar = ({
           })}
         </TooltipProvider>
       </nav>
+
+      <div className="p-4 border-t border-border">
+        <TooltipProvider>
+          <Tooltip delayDuration={0}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                className={cn(
+                  "w-full flex items-center gap-3 text-muted-foreground hover:text-foreground",
+                  isCollapsed && "justify-center"
+                )}
+                onClick={handleLogout}
+              >
+                <LogOut className="w-5 h-5" />
+                <span className={cn(isCollapsed && "hidden")}>Logout</span>
+              </Button>
+            </TooltipTrigger>
+            {isCollapsed && (
+              <TooltipContent side="right">Logout</TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
+      </div>
     </div>
   );
 

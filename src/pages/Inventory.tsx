@@ -114,7 +114,7 @@ export const Inventory = () => {
 
     if (inventoryRes.error) toast({ title: "Error fetching inventory", description: inventoryRes.error.message, variant: "destructive" });
     else {
-      const formattedData = inventoryRes.data.map((item: any) => ({
+      const formattedData = inventoryRes.data.map((item: { products: { id: string; name: string; price: number; min_stock: number }; quantity: number }) => ({
         id: item.products.id,
         name: item.products.name,
         current_stock: item.quantity,
