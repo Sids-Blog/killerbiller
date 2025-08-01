@@ -34,8 +34,8 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { Plus, Edit } from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { Plus, Edit, Filter, X } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 
 export interface Customer {
   id: string;
@@ -71,6 +71,13 @@ export const Customers = () => {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(
     null
   );
+  
+  // Filter states
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [formData, setFormData] = useState<Omit<Customer, "id">>({
     name: "",
     primary_phone_number: "",
@@ -105,6 +112,41 @@ export const Customers = () => {
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
+
+  // Filter customers based on active filters
+  useEffect(() => {
+    let result = customers;
+    
+    // Filter by type
+    if (typeFilter !== "all") {
+      result = result.filter(customer => customer.type === typeFilter);
+    }
+    
+    // Filter by status
+    if (statusFilter !== "all") {
+      const isActive = statusFilter === "active";
+      result = result.filter(customer => customer.is_active === isActive);
+    }
+    
+    // Filter by search query (name, phone, GST number)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(customer => 
+        customer.name.toLowerCase().includes(query) ||
+        customer.primary_phone_number.toLowerCase().includes(query) ||
+        (customer.gst_number && customer.gst_number.toLowerCase().includes(query))
+      );
+    }
+    
+    setFilteredCustomers(result);
+  }, [customers, typeFilter, statusFilter, searchQuery]);
+
+  // Initialize filteredCustomers when customers change
+  useEffect(() => {
+    if (customers.length > 0 && filteredCustomers.length === 0 && typeFilter === "all" && statusFilter === "all" && searchQuery === "") {
+      setFilteredCustomers(customers);
+    }
+  }, [customers, filteredCustomers.length, typeFilter, statusFilter, searchQuery]);
 
   const openDialog = (customer?: Customer) => {
     if (customer) {
@@ -175,6 +217,14 @@ export const Customers = () => {
     setIsDialogOpen(false);
     setEditingCustomer(null);
   };
+
+  const clearFilters = () => {
+    setTypeFilter("all");
+    setStatusFilter("all");
+    setSearchQuery("");
+  };
+
+  const hasActiveFilters = typeFilter !== "all" || statusFilter !== "all" || searchQuery.trim() !== "";
 
   return (
     <div className="space-y-6">
@@ -317,61 +367,246 @@ export const Customers = () => {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Filters */}
       <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Primary Phone</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>GST Number</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
+        <CardContent className="p-4">
+          {/* Mobile filter toggle */}
+          <div className="flex justify-between items-center mb-4 md:hidden">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFilters(!showFilters)}
+              className="flex items-center gap-2"
+            >
+              <Filter className="h-4 w-4" />
+              Filters
+              {hasActiveFilters && (
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  Active
+                </Badge>
+              )}
+            </Button>
+            {hasActiveFilters && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={clearFilters}
+                className="flex items-center gap-1"
+              >
+                <X className="h-3 w-3" />
+                Clear
+              </Button>
+            )}
+          </div>
+
+          {/* Filter controls */}
+          <div className={`space-y-3 ${showFilters ? 'block' : 'hidden'} md:block`}>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              {/* Search */}
+              <div className="space-y-2">
+                <Label htmlFor="search">Search</Label>
+                <Input
+                  id="search"
+                  placeholder="Search by name, phone, GST..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              
+              {/* Type Filter */}
+              <div className="space-y-2">
+                <Label htmlFor="type-filter">Type</Label>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="customer">Customer</SelectItem>
+                    <SelectItem value="vendor">Vendor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Status Filter */}
+              <div className="space-y-2">
+                <Label htmlFor="status-filter">Status</Label>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Clear Filters Button - Desktop */}
+              <div className="flex items-end">
+                <Button 
+                  onClick={clearFilters} 
+                  variant="outline"
+                  className="w-full"
+                  disabled={!hasActiveFilters}
+                >
+                  Clear Filters
+                </Button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      
+      <Card>
+        {/* Desktop Table View */}
+        <div className="hidden md:block">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={6} className="text-center">
-                  Loading...
-                </TableCell>
+                <TableHead>Name</TableHead>
+                <TableHead>Primary Phone</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>GST Number</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
-            ) : (
-              customers.map((customer) => (
-                <TableRow key={customer.id}>
-                  <TableCell>{customer.name}</TableCell>
-                  <TableCell>{customer.primary_phone_number}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        customer.type === "customer" ? "default" : "secondary"
-                      }
-                    >
-                      {customer.type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{customer.gst_number}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={customer.is_active ? "default" : "destructive"}
-                    >
-                      {customer.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => openDialog(customer)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center">
+                    Loading...
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                customers.map((customer) => (
+                  <TableRow key={customer.id}>
+                    <TableCell>{customer.name}</TableCell>
+                    <TableCell>{customer.primary_phone_number}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          customer.type === "customer" ? "default" : "secondary"
+                        }
+                      >
+                        {customer.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{customer.gst_number}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={customer.is_active ? "default" : "destructive"}
+                      >
+                        {customer.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openDialog(customer)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="md:hidden p-4">
+          {loading ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">Loading...</p>
+            </div>
+          ) : filteredCustomers.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">
+                {customers.length === 0 ? "No customers found." : "No customers match the current filters."}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredCustomers.map((customer) => (
+                <Card key={customer.id} className="border">
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-lg">{customer.name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {customer.primary_phone_number}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={
+                            customer.type === "customer" ? "default" : "secondary"
+                          }
+                        >
+                          {customer.type}
+                        </Badge>
+                        <Badge
+                          variant={customer.is_active ? "default" : "destructive"}
+                        >
+                          {customer.is_active ? "Active" : "Inactive"}
+                        </Badge>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2 mb-4">
+                      {customer.address && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Address</p>
+                          <p className="text-sm">{customer.address}</p>
+                        </div>
+                      )}
+                      {customer.gst_number && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">GST Number</p>
+                          <p className="text-sm">{customer.gst_number}</p>
+                        </div>
+                      )}
+                      {customer.manager_name && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Manager</p>
+                          <p className="text-sm">
+                            {customer.manager_name}
+                            {customer.manager_phone_number && (
+                              <span className="text-muted-foreground"> • {customer.manager_phone_number}</span>
+                            )}
+                          </p>
+                        </div>
+                      )}
+                      {customer.comments && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Comments</p>
+                          <p className="text-sm">{customer.comments}</p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openDialog(customer)}
+                      className="w-full"
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit Customer
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
       </Card>
     </div>
   );

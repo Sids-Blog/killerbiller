@@ -72,11 +72,15 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
       fontFamily: 'Arial, sans-serif',
       fontSize: '12px',
       color: '#000',
-      width: '100%', // Use 100% width to be fluid
-      minHeight: '800px',
+      width: '210mm', // Fixed A4 width - won't change based on viewport
+      minWidth: '210mm', // Ensure minimum width
+      maxWidth: '210mm', // Ensure maximum width
+      minHeight: '297mm', // A4 height
       padding: '20px',
       boxSizing: 'border-box',
-      backgroundColor: 'white'
+      backgroundColor: 'white',
+      margin: '0 auto', // Center the content
+      overflow: 'hidden' // Prevent content from overflowing
     }}>
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: '10px' }}>
@@ -100,42 +104,44 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
             </td>
             <td style={{ ...cellStyle, width: '40%' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <tr>
-                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Invoice No.</td>
-                  <td style={{ padding: '2px' }}>#{billDetails.id}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Dated</td>
-                  <td style={{ padding: '2px' }}>{new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Delivery Note</td>
-                  <td style={{ padding: '2px' }}>Mode/Terms of Payment</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Reference No. & Date</td>
-                  <td style={{ padding: '2px' }}>{billDetails.id} dt. {new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Buyer's Order No.</td>
-                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Dated</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '2px' }}>-</td>
-                  <td style={{ padding: '2px' }}>{new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Dispatch Doc No.</td>
-                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Delivery Note Date</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Dispatched through</td>
-                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Destination</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '2px', fontWeight: 'bold' }}>Terms of Delivery</td>
-                  <td style={{ padding: '2px' }}></td>
-                </tr>
+                <tbody>
+                  <tr>
+                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Invoice No.</td>
+                    <td style={{ padding: '2px' }}>#{billDetails.id}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Dated</td>
+                    <td style={{ padding: '2px' }}>{new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Delivery Note</td>
+                    <td style={{ padding: '2px' }}>Mode/Terms of Payment</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Reference No. & Date</td>
+                    <td style={{ padding: '2px' }}>{billDetails.id} dt. {new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Buyer's Order No.</td>
+                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Dated</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '2px' }}>-</td>
+                    <td style={{ padding: '2px' }}>{new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Dispatch Doc No.</td>
+                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Delivery Note Date</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Dispatched through</td>
+                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Destination</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Terms of Delivery</td>
+                    <td style={{ padding: '2px' }}></td>
+                  </tr>
+                </tbody> {/* ✅ Closing </tbody> */}
               </table>
             </td>
           </tr>

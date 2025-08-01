@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE TABLE IF NOT EXISTS public.damaged_stock_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     product_id uuid NOT NULL,
+    vendor_id uuid REFERENCES public.customers(id) ON DELETE SET NULL,
     quantity integer NOT NULL,
     unit_cost numeric NOT NULL,
     total_value numeric GENERATED ALWAYS AS ((quantity * unit_cost)) STORED,

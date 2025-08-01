@@ -3,13 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -21,7 +14,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Package, AlertTriangle, ChevronsUpDown } from "lucide-react";
+import { Plus, Package, AlertTriangle, ChevronsUpDown, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -78,6 +71,9 @@ export const Inventory = () => {
   const [productFilter, setProductFilter] = useState("all");
   const [vendorFilter, setVendorFilter] = useState("all");
   const [vendorSearchOpen, setVendorSearchOpen] = useState(false);
+  const [productSearchOpen, setProductSearchOpen] = useState(false);
+  const [addStockVendorSearchOpen, setAddStockVendorSearchOpen] = useState(false);
+  const [addStockProductSearchOpen, setAddStockProductSearchOpen] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
@@ -237,11 +233,94 @@ export const Inventory = () => {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="vendor">Vendor</Label>
-                <Select value={selectedVendor} onValueChange={setSelectedVendor}><SelectTrigger><SelectValue placeholder="Select vendor first" /></SelectTrigger><SelectContent>{vendors.map((v) => (<SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>))}</SelectContent></Select>
+                <Popover open={addStockVendorSearchOpen} onOpenChange={setAddStockVendorSearchOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={addStockVendorSearchOpen}
+                      className="w-full justify-between"
+                    >
+                      <span className="truncate">
+                        {selectedVendor
+                          ? vendors.find((vendor) => vendor.id === selectedVendor)?.name
+                          : "Select vendor first"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[95vw] p-0">
+                    <Command>
+                      <CommandInput placeholder="Search vendors..." className="h-9" />
+                      <CommandList className="max-h-[200px]">
+                        <CommandEmpty>No vendor found.</CommandEmpty>
+                        <CommandGroup>
+                          {vendors.map((vendor) => (
+                            <CommandItem
+                              key={vendor.id}
+                              value={vendor.name}
+                              onSelect={() => {
+                                setSelectedVendor(vendor.id);
+                                setAddStockVendorSearchOpen(false);
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <Check className={`mr-2 h-4 w-4 ${selectedVendor === vendor.id ? "opacity-100" : "opacity-0"}`} />
+                              <span className="truncate">{vendor.name}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="product">Product</Label>
-                <Select value={selectedProduct} onValueChange={setSelectedProduct} disabled={!selectedVendor || loadingProducts}><SelectTrigger><SelectValue placeholder={loadingProducts ? "Loading products..." : "Select product"} /></SelectTrigger><SelectContent>{products.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>))}</SelectContent></Select>
+                <Popover open={addStockProductSearchOpen} onOpenChange={setAddStockProductSearchOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={addStockProductSearchOpen}
+                      className="w-full justify-between"
+                      disabled={!selectedVendor || loadingProducts}
+                    >
+                      <span className="truncate">
+                        {loadingProducts
+                          ? "Loading products..."
+                          : selectedProduct
+                          ? products.find((product) => product.id === selectedProduct)?.name
+                          : "Select product"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[95vw] p-0">
+                    <Command>
+                      <CommandInput placeholder="Search products..." className="h-9" />
+                      <CommandList className="max-h-[200px]">
+                        <CommandEmpty>No product found.</CommandEmpty>
+                        <CommandGroup>
+                          {products.map((product) => (
+                            <CommandItem
+                              key={product.id}
+                              value={product.name}
+                              onSelect={() => {
+                                setSelectedProduct(product.id);
+                                setAddStockProductSearchOpen(false);
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <Check className={`mr-2 h-4 w-4 ${selectedProduct === product.id ? "opacity-100" : "opacity-0"}`} />
+                              <span className="truncate">{product.name}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="quantity">Quantity to Add</Label>
@@ -296,7 +375,58 @@ export const Inventory = () => {
             <CardHeader><CardTitle>Inventory Transactions</CardTitle></CardHeader>
             <CardContent>
               <div className="flex flex-col sm:flex-row gap-4 mb-4">
-                <Select value={productFilter} onValueChange={setProductFilter}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Filter by product" /></SelectTrigger><SelectContent><SelectItem value="all">All Products</SelectItem>{allProducts.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select>
+                <Popover open={productSearchOpen} onOpenChange={setProductSearchOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={productSearchOpen}
+                      className="w-full sm:w-[180px] justify-between"
+                    >
+                      <span className="truncate">
+                        {productFilter !== "all"
+                          ? allProducts.find((product) => product.id === productFilter)?.name
+                          : "Filter by product"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[200px] p-0">
+                    <Command>
+                      <CommandInput placeholder="Search products..." className="h-9" />
+                      <CommandList className="max-h-[200px]">
+                        <CommandEmpty>No product found.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            value="all"
+                            onSelect={() => {
+                              setProductFilter("all");
+                              setProductSearchOpen(false);
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Check className={`mr-2 h-4 w-4 ${productFilter === "all" ? "opacity-100" : "opacity-0"}`} />
+                            <span>All Products</span>
+                          </CommandItem>
+                          {allProducts.map((product) => (
+                            <CommandItem
+                              key={product.id}
+                              value={product.name}
+                              onSelect={() => {
+                                setProductFilter(product.id);
+                                setProductSearchOpen(false);
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <Check className={`mr-2 h-4 w-4 ${productFilter === product.id ? "opacity-100" : "opacity-0"}`} />
+                              <span className="truncate">{product.name}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 <Popover open={vendorSearchOpen} onOpenChange={setVendorSearchOpen}>
                     <PopoverTrigger asChild>
                         <Button variant="outline" role="combobox" aria-expanded={vendorSearchOpen} className="w-full sm:w-[200px] justify-between">

@@ -22,7 +22,7 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
-import { CreditCard, ArrowDownCircle, CalendarIcon, ChevronsUpDown } from "lucide-react";
+import { CreditCard, ArrowDownCircle, CalendarIcon, ChevronsUpDown, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -90,6 +90,8 @@ export const Payments = () => {
   const [typeFilter, setTypeFilter] = useState("all");
   const [partyFilter, setPartyFilter] = useState("all");
   const [partySearchOpen, setPartySearchOpen] = useState(false);
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [vendorSearchOpen, setVendorSearchOpen] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
@@ -222,7 +224,52 @@ export const Payments = () => {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="customer">Customer</Label>
-              <Select value={selectedCustomer} onValueChange={setSelectedCustomer}><SelectTrigger id="customer"><SelectValue placeholder="Select a customer" /></SelectTrigger><SelectContent>{customers.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}</SelectContent></Select>
+              <Popover open={customerSearchOpen} onOpenChange={setCustomerSearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={customerSearchOpen}
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {selectedCustomer
+                        ? customers.find((customer) => customer.id === selectedCustomer)?.name
+                        : "Select a customer"}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[95vw] p-0" side="bottom" align="start" avoidCollisions={true}>
+                  <Command>
+                    <CommandInput placeholder="Search customers..." className="h-9" />
+                    <CommandList className="max-h-[200px]">
+                      <CommandEmpty>No customer found.</CommandEmpty>
+                      <CommandGroup>
+                        {customers.map((customer) => (
+                          <CommandItem
+                            key={customer.id}
+                            value={customer.name}
+                            onSelect={() => {
+                              setSelectedCustomer(customer.id);
+                              setCustomerSearchOpen(false);
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Check className={`mr-2 h-4 w-4 ${selectedCustomer === customer.id ? "opacity-100" : "opacity-0"}`} />
+                            <div className="flex flex-col">
+                              <span className="truncate">{customer.name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                Balance: ₹{customer.outstanding_balance?.toFixed(2) || '0.00'}
+                              </span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {selectedCustomer && (
@@ -268,7 +315,58 @@ export const Payments = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="vendor">Vendor (Optional)</Label>
-              <Select value={selectedVendor} onValueChange={setSelectedVendor}><SelectTrigger><SelectValue placeholder="Select a vendor" /></SelectTrigger><SelectContent>{vendors.map((v) => (<SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>))}</SelectContent></Select>
+              <Popover open={vendorSearchOpen} onOpenChange={setVendorSearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={vendorSearchOpen}
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {selectedVendor
+                        ? vendors.find((vendor) => vendor.id === selectedVendor)?.name
+                        : "Select a vendor"}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[95vw] p-0" side="bottom" align="start" avoidCollisions={true}>
+                  <Command>
+                    <CommandInput placeholder="Search vendors..." className="h-9" />
+                    <CommandList className="max-h-[200px]">
+                      <CommandEmpty>No vendor found.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value="none"
+                          onSelect={() => {
+                            setSelectedVendor("");
+                            setVendorSearchOpen(false);
+                          }}
+                          className="cursor-pointer"
+                        >
+                          <Check className={`mr-2 h-4 w-4 ${selectedVendor === "" ? "opacity-100" : "opacity-0"}`} />
+                          <span className="text-muted-foreground">None (Clear selection)</span>
+                        </CommandItem>
+                        {vendors.map((vendor) => (
+                          <CommandItem
+                            key={vendor.id}
+                            value={vendor.name}
+                            onSelect={() => {
+                              setSelectedVendor(vendor.id);
+                              setVendorSearchOpen(false);
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Check className={`mr-2 h-4 w-4 ${selectedVendor === vendor.id ? "opacity-100" : "opacity-0"}`} />
+                            <span className="truncate">{vendor.name}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-2">
               <Label htmlFor="category">Category (Optional)</Label>
@@ -321,8 +419,8 @@ export const Payments = () => {
               </div>
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader><TableRow><TableHead>Type</TableHead><TableHead>Party</TableHead><TableHead>Details</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Date</TableHead></TableRow></TableHeader>
-                  <TableBody>{transactions.map(t => (<TableRow key={t.id}><TableCell><Badge variant={t.type === 'revenue' ? 'default' : 'secondary'}>{t.type}</Badge></TableCell><TableCell>{getPartyName(t)}</TableCell><TableCell>{getDetails(t)}</TableCell><TableCell className="text-right">Rs. {t.amount.toFixed(2)}</TableCell><TableCell>{new Date(t.date_of_transaction).toLocaleString()}</TableCell></TableRow>))}</TableBody>
+                  <TableHeader><TableRow><TableHead>Type</TableHead><TableHead>Party</TableHead><TableHead className="hidden sm:table-cell">Details</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="hidden md:table-cell">Date</TableHead></TableRow></TableHeader>
+                  <TableBody>{transactions.map(t => (<TableRow key={t.id}><TableCell><Badge variant={t.type === 'revenue' ? 'default' : 'secondary'}>{t.type}</Badge></TableCell><TableCell className="max-w-[100px] truncate">{getPartyName(t)}</TableCell><TableCell className="hidden sm:table-cell">{getDetails(t)}</TableCell><TableCell className="text-right">Rs. {t.amount.toFixed(2)}</TableCell><TableCell className="hidden md:table-cell text-xs">{new Date(t.date_of_transaction).toLocaleDateString()}</TableCell></TableRow>))}</TableBody>
                 </Table>
               </div>
             </CardContent>
@@ -330,8 +428,8 @@ export const Payments = () => {
         </TabsContent>
         <TabsContent value="balances">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-            <Card><CardHeader><CardTitle>Customer Balances</CardTitle></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Customer</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{customers.map(c => (<TableRow key={c.id}><TableCell>{c.name}</TableCell><TableCell className="text-right">Rs. {c.outstanding_balance.toFixed(2)}</TableCell></TableRow>))}</TableBody></Table></CardContent></Card>
-            <Card><CardHeader><CardTitle>Vendor Balances</CardTitle></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{vendors.map(v => (<TableRow key={v.id}><TableCell>{v.name}</TableCell><TableCell className="text-right">Rs. {v.outstanding_balance.toFixed(2)}</TableCell></TableRow>))}</TableBody></Table></CardContent></Card>
+            <Card><CardHeader><CardTitle>Customer Balances</CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Customer</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{customers.map(c => (<TableRow key={c.id}><TableCell>{c.name}</TableCell><TableCell className="text-right">Rs. {c.outstanding_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
+            <Card><CardHeader><CardTitle>Vendor Balances</CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{vendors.map(v => (<TableRow key={v.id}><TableCell>{v.name}</TableCell><TableCell className="text-right">Rs. {v.outstanding_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
           </div>
         </TabsContent>
       </Tabs>

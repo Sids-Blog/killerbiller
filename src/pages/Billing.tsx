@@ -33,16 +33,28 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Trash2, Plus, Download } from "lucide-react";
+import { Trash2, Plus, Download, ChevronsUpDown, Check } from "lucide-react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { Checkbox } from "@/components/ui/checkbox";
-import html2pdf from 'html2pdf.js';
-import InvoiceTemplate from '@/components/templates/InvoiceTemplate';
-import { createRoot } from 'react-dom/client';
+import html2pdf from "html2pdf.js";
+import InvoiceTemplate from "@/components/templates/InvoiceTemplate";
+import { createRoot } from "react-dom/client";
 import { Customer } from "./Customers";
 
 // Interfaces
@@ -70,7 +82,7 @@ interface Bill {
   created_at: string;
   date_of_bill: string;
   total_amount: number;
-  status: 'outstanding' | 'paid' | 'partial';
+  status: "outstanding" | "paid" | "partial";
   is_gst_bill: boolean;
   customers: { name: string } | null;
 }
@@ -107,14 +119,26 @@ export const Billing = () => {
   const [gstFilter, setGstFilter] = useState("all");
   const [billToDelete, setBillToDelete] = useState<string | null>(null);
 
+  // Searchable dropdown states
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [productSearchOpen, setProductSearchOpen] = useState(false);
+  const [customerFilterSearchOpen, setCustomerFilterSearchOpen] =
+    useState(false);
+
   const handleDeleteBill = async () => {
     if (!billToDelete) return;
     setLoading(true);
 
-    const { error } = await supabase.rpc('delete_bill', { p_bill_id: billToDelete });
+    const { error } = await supabase.rpc("delete_bill", {
+      p_bill_id: billToDelete,
+    });
 
     if (error) {
-      toast({ title: "Error deleting bill", description: error.message, variant: "destructive" });
+      toast({
+        title: "Error deleting bill",
+        description: error.message,
+        variant: "destructive",
+      });
     } else {
       toast({ title: "Success", description: "Bill deleted successfully" });
       fetchData();
@@ -136,7 +160,9 @@ export const Billing = () => {
       .select("*, inventory(quantity)");
     const billsPromise = supabase
       .from("bills")
-      .select("id, created_at, date_of_bill, total_amount, status, is_gst_bill, customers ( name )")
+      .select(
+        "id, created_at, date_of_bill, total_amount, status, is_gst_bill, customers ( name )"
+      )
       .order("date_of_bill", { ascending: false });
 
     const [customerRes, productRes, billsRes] = await Promise.all([
@@ -145,17 +171,34 @@ export const Billing = () => {
       billsPromise,
     ]);
 
-    if (customerRes.error) toast({ title: "Error fetching customers", description: customerRes.error.message, variant: "destructive" });
+    if (customerRes.error)
+      toast({
+        title: "Error fetching customers",
+        description: customerRes.error.message,
+        variant: "destructive",
+      });
     else setCustomers(customerRes.data || []);
 
-    if (productRes.error) toast({ title: "Error fetching products", description: productRes.error.message, variant: "destructive" });
+    if (productRes.error)
+      toast({
+        title: "Error fetching products",
+        description: productRes.error.message,
+        variant: "destructive",
+      });
     else setProducts(productRes.data || []);
 
-    if (billsRes.error) toast({ title: "Error fetching bills", description: billsRes.error.message, variant: "destructive" });
+    if (billsRes.error)
+      toast({
+        title: "Error fetching bills",
+        description: billsRes.error.message,
+        variant: "destructive",
+      });
     else {
-      const transformedData = (billsRes.data || []).map(bill => ({
+      const transformedData = (billsRes.data || []).map((bill) => ({
         ...bill,
-        customers: Array.isArray(bill.customers) ? bill.customers[0] || null : bill.customers,
+        customers: Array.isArray(bill.customers)
+          ? bill.customers[0] || null
+          : bill.customers,
       }));
       setBills(transformedData as unknown as Bill[]);
       setFilteredBills(transformedData as unknown as Bill[]);
@@ -172,18 +215,20 @@ export const Billing = () => {
     if (orderState && products.length > 0 && customers.length > 0) {
       setSelectedCustomer(orderState.customer_id);
       setOrderId(orderState.id);
-      const items = orderState.order_items.map((item: { product_id: string; quantity: number }) => {
-        const product = products.find(p => p.id === item.product_id);
-        return {
-          product_id: item.product_id,
-          product_name: product?.name || 'Unknown',
-          master_lot_size: product?.lot_size || 0,
-          lots: item.quantity / (product?.lot_size || 1) + "",
-          quantity: item.quantity,
-          price: product?.price || 0,
-          lot_price: product?.lot_price || 0,
-        };
-      });
+      const items = orderState.order_items.map(
+        (item: { product_id: string; quantity: number }) => {
+          const product = products.find((p) => p.id === item.product_id);
+          return {
+            product_id: item.product_id,
+            product_name: product?.name || "Unknown",
+            master_lot_size: product?.lot_size || 0,
+            lots: item.quantity / (product?.lot_size || 1) + "",
+            quantity: item.quantity,
+            price: product?.price || 0,
+            lot_price: product?.lot_price || 0,
+          };
+        }
+      );
       setBillItems(items);
       navigate(location.pathname, { replace: true, state: {} });
     }
@@ -191,9 +236,18 @@ export const Billing = () => {
 
   useEffect(() => {
     let result = bills;
-    if (customerFilter !== "all") result = result.filter(bill => bill.customers?.name === customers.find(c => c.id === customerFilter)?.name);
-    if (statusFilter !== "all") result = result.filter(bill => bill.status === statusFilter);
-    if (gstFilter !== "all") result = result.filter(bill => gstFilter === 'gst' ? bill.is_gst_bill : !bill.is_gst_bill);
+    if (customerFilter !== "all")
+      result = result.filter(
+        (bill) =>
+          bill.customers?.name ===
+          customers.find((c) => c.id === customerFilter)?.name
+      );
+    if (statusFilter !== "all")
+      result = result.filter((bill) => bill.status === statusFilter);
+    if (gstFilter !== "all")
+      result = result.filter((bill) =>
+        gstFilter === "gst" ? bill.is_gst_bill : !bill.is_gst_bill
+      );
     setFilteredBills(result);
   }, [customerFilter, statusFilter, gstFilter, bills, customers]);
 
@@ -204,7 +258,7 @@ export const Billing = () => {
 
     const availableStock = product.inventory?.quantity ?? 0;
     const quantityInBill = billItems
-      .filter(item => item.product_id === selectedProduct)
+      .filter((item) => item.product_id === selectedProduct)
       .reduce((sum, item) => sum + item.quantity, 0);
 
     const requestedQuantity = product.lot_size;
@@ -218,15 +272,18 @@ export const Billing = () => {
       return;
     }
 
-    setBillItems([...billItems, {
-      product_id: product.id,
-      product_name: product.name,
-      master_lot_size: product.lot_size,
-      lots: "1",
-      quantity: product.lot_size,
-      price: product.price,
-      lot_price: product.lot_price,
-    }]);
+    setBillItems([
+      ...billItems,
+      {
+        product_id: product.id,
+        product_name: product.name,
+        master_lot_size: product.lot_size,
+        lots: "1",
+        quantity: product.lot_size,
+        price: product.price,
+        lot_price: product.lot_price,
+      },
+    ]);
     setSelectedProduct("");
   };
 
@@ -234,7 +291,11 @@ export const Billing = () => {
     setBillItems(billItems.filter((_, i) => i !== index));
   };
 
-  const handleItemChange = (index: number, field: keyof BillItem, value: string | number) => {
+  const handleItemChange = (
+    index: number,
+    field: keyof BillItem,
+    value: string | number
+  ) => {
     const updatedItems = [...billItems];
     const item = { ...updatedItems[index] };
     const product = products.find((p) => p.id === item.product_id);
@@ -247,7 +308,11 @@ export const Billing = () => {
       case "lots":
         newQuantity = (parseInt(String(value)) || 0) * item.master_lot_size;
         if (newQuantity > availableStock) {
-          toast({ title: "Error: Stock Limit Exceeded", description: `Cannot set quantity to ${newQuantity} for ${product.name}. Available stock: ${availableStock}.`, variant: "destructive" });
+          toast({
+            title: "Error: Stock Limit Exceeded",
+            description: `Cannot set quantity to ${newQuantity} for ${product.name}. Available stock: ${availableStock}.`,
+            variant: "destructive",
+          });
           return;
         }
         item.lots = String(value);
@@ -258,7 +323,11 @@ export const Billing = () => {
       case "quantity":
         newQuantity = parseInt(String(value)) || 0;
         if (newQuantity > availableStock) {
-          toast({ title: "Error: Stock Limit Exceeded", description: `Cannot set quantity to ${newQuantity} for ${product.name}. Available stock: ${availableStock}.`, variant: "destructive" });
+          toast({
+            title: "Error: Stock Limit Exceeded",
+            description: `Cannot set quantity to ${newQuantity} for ${product.name}. Available stock: ${availableStock}.`,
+            variant: "destructive",
+          });
           return;
         }
         item.quantity = newQuantity;
@@ -270,7 +339,8 @@ export const Billing = () => {
         break;
       case "lot_price":
         item.lot_price = parseFloat(String(value)) || 0;
-        if (item.master_lot_size > 0) item.price = item.lot_price / item.master_lot_size;
+        if (item.master_lot_size > 0)
+          item.price = item.lot_price / item.master_lot_size;
         break;
     }
     updatedItems[index] = item;
@@ -278,7 +348,10 @@ export const Billing = () => {
   };
 
   const billCalculations = useMemo(() => {
-    const subtotal = billItems.reduce((sum, item) => sum + item.quantity * item.price, 0);
+    const subtotal = billItems.reduce(
+      (sum, item) => sum + item.quantity * item.price,
+      0
+    );
     let grandTotal = subtotal - discount;
     let taxDetails = {
       sgst: 0,
@@ -294,7 +367,7 @@ export const Billing = () => {
       let totalCgst = 0;
       let totalCess = 0;
 
-      billItems.forEach(item => {
+      billItems.forEach((item) => {
         const finalPrice = item.price * item.quantity;
         const basePrice = finalPrice / (1 + totalGstRate);
         totalTaxableValue += basePrice;
@@ -311,7 +384,8 @@ export const Billing = () => {
         cess: totalCess,
         taxableValue: totalTaxableValue,
       };
-      grandTotal = totalTaxableValue + totalSgst + totalCgst + totalCess - discount;
+      grandTotal =
+        totalTaxableValue + totalSgst + totalCgst + totalCess - discount;
     }
 
     return {
@@ -321,105 +395,200 @@ export const Billing = () => {
     };
   }, [billItems, discount, isGstBill, sgstPercent, cgstPercent, cessPercent]);
 
-  const generatePdf = (billDetails: Bill, items: BillItem[], customerDetails: Customer) => {
-    // Create a temporary, hidden container for rendering
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.left = '-9999px'; // Position off-screen
-    container.style.width = '210mm'; // A4 width for an accurate preview
-    document.body.appendChild(container);
-
-    // Render the React component into the container
-    const root = createRoot(container);
-    root.render(
-      <InvoiceTemplate
-        billDetails={billDetails}
-        billCalculations={billCalculations}
-        items={items}
-        customerDetails={customerDetails}
-      />
-    );
-
-    const opt = {
-      margin: 0.5,
-      filename: `invoice_${billDetails.id}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, logging: false },
-      jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
-    };
-
-    // Allow a brief moment for the component to render before capturing
-    setTimeout(() => {
-      html2pdf()
-        .from(container)
-        .set(opt)
-        .save()
-        .then(() => {
-          // Cleanup after saving
-          root.unmount();
-          document.body.removeChild(container);
-        })
-        .catch((err: Error) => {
-          console.error("PDF generation error:", err);
-          // Ensure cleanup happens even if there's an error
-          root.unmount();
-          if (document.body.contains(container)) {
-            document.body.removeChild(container);
-          }
-        });
-    }, 500);
-  };
-
-  const previewInvoice = (billDetails: Bill, items: BillItem[], customerDetails: Customer) => {
+  const previewInvoice = (
+    billDetails: Bill,
+    items: BillItem[],
+    customerDetails: Customer
+  ) => {
     // Create a modal container
-    const modal = document.createElement('div');
-    modal.style.position = 'fixed';
-    modal.style.top = '0';
-    modal.style.left = '0';
-    modal.style.width = '100%';
-    modal.style.height = '100%';
-    modal.style.backgroundColor = 'rgba(0,0,0,0.8)';
-    modal.style.zIndex = '10000';
-    modal.style.display = 'flex';
-    modal.style.justifyContent = 'center';
-    modal.style.alignItems = 'center';
-    modal.style.overflowY = 'auto';
+    const modal = document.createElement("div");
+    modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.8);
+    z-index: 10000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-y: auto;
+    padding: 20px;
+    box-sizing: border-box;
+  `;
 
-    // Create content container
-    const content = document.createElement('div');
-    content.style.backgroundColor = 'white';
-    content.style.maxWidth = '90%';
-    content.style.maxHeight = '90%';
-    content.style.overflow = 'auto';
-    content.style.position = 'relative';
-    content.style.borderRadius = '8px';
-    content.style.boxShadow = '0 10px 30px rgba(0,0,0,0.3)';
+    // Create content container with responsive dimensions
+    const content = document.createElement("div");
+    const A4_WIDTH_MM = 210;
+    const A4_HEIGHT_MM = 297;
+    const isMobileView = window.innerWidth < 768;
+
+    content.style.cssText = `
+    background-color: white;
+    width: ${isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`};
+    min-width: ${isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`};
+    max-width: ${isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`};
+    min-height: ${isMobileView ? '100vh' : `${A4_HEIGHT_MM}mm`};
+    position: relative;
+    border-radius: ${isMobileView ? '0' : '8px'};
+    box-shadow: ${isMobileView ? 'none' : '0 10px 30px rgba(0,0,0,0.3)'};
+    margin: auto;
+    overflow: ${isMobileView ? 'auto' : 'visible'};
+  `;
+
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+
+    // Control panel (buttons) - positioned outside React root
+    const controlPanel = document.createElement("div");
+    const isMobile = window.innerWidth < 768;
+    
+    controlPanel.style.cssText = `
+    position: fixed;
+    top: ${isMobile ? '20px' : '10px'};
+    right: ${isMobile ? '20px' : '10px'};
+    display: flex;
+    gap: ${isMobile ? '12px' : '10px'};
+    z-index: 10002;
+    background: rgba(255, 255, 255, 0.95);
+    padding: ${isMobile ? '12px' : '8px'};
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    backdrop-filter: blur(10px);
+  `;
+
+    // Download button
+    const downloadButton = document.createElement("button");
+    downloadButton.innerHTML = isMobile ? "📥" : "📥 PDF";
+    downloadButton.style.cssText = `
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: ${isMobile ? '10px 12px' : '6px 12px'};
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: ${isMobile ? '16px' : '12px'};
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,123,255,0.3);
+    min-width: ${isMobile ? '44px' : 'auto'};
+    min-height: ${isMobile ? '44px' : 'auto'};
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  `;
 
     // Close button
-    const closeButton = document.createElement('button');
-    closeButton.innerHTML = '×';
-    closeButton.style.position = 'absolute';
-    closeButton.style.top = '10px';
-    closeButton.style.right = '15px';
-    closeButton.style.background = 'none';
-    closeButton.style.border = 'none';
-    closeButton.style.fontSize = '24px';
-    closeButton.style.cursor = 'pointer';
-    closeButton.style.zIndex = '10001';
-    closeButton.style.color = '#666';
-    closeButton.onclick = () => {
+    const closeButton = document.createElement("button");
+    closeButton.innerHTML = "✕";
+    closeButton.style.cssText = `
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: ${isMobile ? '10px 12px' : '6px 10px'};
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: ${isMobile ? '18px' : '12px'};
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(220,53,69,0.3);
+    min-width: ${isMobile ? '44px' : 'auto'};
+    min-height: ${isMobile ? '44px' : 'auto'};
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  `;
+
+    const cleanup = () => {
       root.unmount();
       document.body.removeChild(modal);
     };
 
-    content.appendChild(closeButton);
-    modal.appendChild(content);
-    document.body.appendChild(modal);
+    downloadButton.onclick = async () => {
+      try {
+        downloadButton.innerHTML = "⏳...";
+        downloadButton.disabled = true;
 
-    // Render the invoice
+        // Use the visible content for PDF generation
+        const pdfOptions = {
+          margin: 0.4,
+          filename: `invoice_${billDetails.id.substring(0, 8)}.pdf`,
+          image: {
+            type: "jpeg",
+            quality: 0.98,
+          },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: "#ffffff",
+            logging: false,
+            width: content.offsetWidth,
+            height: content.offsetHeight,
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: content.offsetWidth,
+            windowHeight: content.offsetHeight,
+          },
+          jsPDF: {
+            unit: "mm",
+            format: "a4",
+            orientation: "portrait",
+            compress: true,
+          },
+        };
+
+        // Generate PDF from the visible modal content
+        await html2pdf().from(content).set(pdfOptions).save();
+
+        toast({
+          title: "PDF Downloaded Successfully",
+          description: "Your invoice has been downloaded.",
+          variant: "default",
+        });
+      } catch (error: any) {
+        console.error("PDF generation error:", error);
+        toast({
+          title: "PDF Generation Failed",
+          description:
+            error.message ||
+            "There was an error generating the PDF. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        downloadButton.innerHTML = "📥 PDF";
+        downloadButton.disabled = false;
+      }
+    };
+
+    closeButton.onclick = cleanup;
+
+    // Add buttons to control panel
+    controlPanel.appendChild(downloadButton);
+    controlPanel.appendChild(closeButton);
+    
+    // Add control panel to modal (not content)
+    modal.appendChild(controlPanel);
+
+    // Render the invoice with responsive dimensions
     const root = createRoot(content);
     root.render(
-      <div style={{ padding: '20px' }}>
+      <div
+        style={{
+          width: isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`,
+          minWidth: isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`,
+          maxWidth: isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`,
+          minHeight: isMobileView ? '100vh' : `${A4_HEIGHT_MM}mm`,
+          backgroundColor: "white",
+          margin: 0,
+          padding: isMobileView ? '10px' : 0,
+          boxSizing: "border-box",
+          overflow: isMobileView ? 'auto' : 'hidden',
+          transform: isMobileView ? 'scale(0.8)' : 'none',
+          transformOrigin: 'top left',
+        }}
+      >
         <InvoiceTemplate
           billCalculations={billCalculations}
           billDetails={billDetails}
@@ -429,57 +598,95 @@ export const Billing = () => {
       </div>
     );
 
-    // Close modal when clicking outside
+    // Close modal when clicking outside (but not on buttons)
     modal.onclick = (e) => {
       if (e.target === modal) {
-        root.unmount();
-        document.body.removeChild(modal);
+        cleanup();
       }
     };
+
+    // Handle ESC key to close modal
+    const handleEscKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        cleanup();
+        document.removeEventListener("keydown", handleEscKey);
+      }
+    };
+    document.addEventListener("keydown", handleEscKey);
+  };
+
+  // Simplified generatePdf function that just calls previewInvoice
+  const generatePdf = async (
+    billDetails: Bill,
+    items: BillItem[],
+    customerDetails: Customer
+  ) => {
+    previewInvoice(billDetails, items, customerDetails);
   };
 
   const handleDownloadPdf = async (billId: string) => {
     setLoading(true);
     const { data: billDetails, error: billError } = await supabase
-      .from('bills')
-      .select('*, customers(*)')
-      .eq('id', billId)
+      .from("bills")
+      .select("*, customers(*)")
+      .eq("id", billId)
       .single();
 
     if (billError || !billDetails) {
-      toast({ title: "Error fetching bill details", description: billError?.message, variant: "destructive" });
+      toast({
+        title: "Error fetching bill details",
+        description: billError?.message,
+        variant: "destructive",
+      });
       setLoading(false);
       return;
     }
 
     const { data: billItemsData, error: itemsError } = await supabase
-      .from('bill_items')
-      .select('*, products(name)')
-      .eq('bill_id', billId);
+      .from("bill_items")
+      .select("*, products(name)")
+      .eq("bill_id", billId);
 
     if (itemsError || !billItemsData) {
-      toast({ title: "Error fetching bill items", description: itemsError?.message, variant: "destructive" });
+      toast({
+        title: "Error fetching bill items",
+        description: itemsError?.message,
+        variant: "destructive",
+      });
       setLoading(false);
       return;
     }
 
-    const customer = Array.isArray(billDetails.customers) ? billDetails.customers[0] : billDetails.customers;
+    const customer = Array.isArray(billDetails.customers)
+      ? billDetails.customers[0]
+      : billDetails.customers;
 
     if (!customer) {
-      toast({ title: "Error", description: "Customer details not found for this bill.", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Customer details not found for this bill.",
+        variant: "destructive",
+      });
       setLoading(false);
       return;
     }
 
-    const itemsForPdf: BillItem[] = billItemsData.map((item: { product_id: string; products: { name: string }; quantity: number; price: number }) => ({
-      product_id: item.product_id,
-      product_name: item.products?.name || 'Unknown Product',
-      quantity: item.quantity,
-      price: item.price,
-      master_lot_size: 0,
-      lots: '',
-      lot_price: 0,
-    }));
+    const itemsForPdf: BillItem[] = billItemsData.map(
+      (item: {
+        product_id: string;
+        products: { name: string };
+        quantity: number;
+        price: number;
+      }) => ({
+        product_id: item.product_id,
+        product_name: item.products?.name || "Unknown Product",
+        quantity: item.quantity,
+        price: item.price,
+        master_lot_size: 0,
+        lots: "",
+        lot_price: 0,
+      })
+    );
 
     //generatePdf(billDetails, itemsForPdf, customer);
     previewInvoice(billDetails, itemsForPdf, customer);
@@ -488,13 +695,17 @@ export const Billing = () => {
 
   const submitBill = async () => {
     if (!selectedCustomer || billItems.length === 0) {
-      toast({ title: "Error", description: "Please select a customer and add at least one item", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Please select a customer and add at least one item",
+        variant: "destructive",
+      });
       return;
     }
 
     // Final stock validation before submission
     for (const item of billItems) {
-      const product = products.find(p => p.id === item.product_id);
+      const product = products.find((p) => p.id === item.product_id);
       const availableStock = product?.inventory?.quantity ?? 0;
       if (item.quantity > availableStock) {
         toast({
@@ -527,7 +738,11 @@ export const Billing = () => {
       .single();
 
     if (billError || !bill) {
-      toast({ title: "Error creating bill", description: billError?.message, variant: "destructive" });
+      toast({
+        title: "Error creating bill",
+        description: billError?.message,
+        variant: "destructive",
+      });
       return;
     }
 
@@ -538,28 +753,63 @@ export const Billing = () => {
       price: item.price,
     }));
 
-    const { error: itemsError } = await supabase.from("bill_items").insert(itemsToInsert);
+    const { error: itemsError } = await supabase
+      .from("bill_items")
+      .insert(itemsToInsert);
     if (itemsError) {
-      toast({ title: "Error adding bill items", description: itemsError.message, variant: "destructive" });
+      toast({
+        title: "Error adding bill items",
+        description: itemsError.message,
+        variant: "destructive",
+      });
       return;
     }
 
     for (const item of billItems) {
-      const { error: stockError } = await supabase.rpc("decrement_stock", { p_product_id: item.product_id, p_quantity: item.quantity });
-      if (stockError) toast({ title: "Error updating stock", description: stockError.message, variant: "destructive" });
+      const { error: stockError } = await supabase.rpc("decrement_stock", {
+        p_product_id: item.product_id,
+        p_quantity: item.quantity,
+      });
+      if (stockError)
+        toast({
+          title: "Error updating stock",
+          description: stockError.message,
+          variant: "destructive",
+        });
     }
 
-    const { error: customerError } = await supabase.rpc("update_customer_balance", { p_customer_id: selectedCustomer, p_amount: grandTotal });
-    if (customerError) toast({ title: "Error updating customer balance", description: customerError.message, variant: "destructive" });
+    const { error: customerError } = await supabase.rpc(
+      "update_customer_balance",
+      { p_customer_id: selectedCustomer, p_amount: grandTotal }
+    );
+    if (customerError)
+      toast({
+        title: "Error updating customer balance",
+        description: customerError.message,
+        variant: "destructive",
+      });
 
     if (orderId) {
-      const { error: orderUpdateError } = await supabase.from('orders').update({ status: 'fulfilled' }).eq('id', orderId);
-      if (orderUpdateError) toast({ title: "Error updating order status", description: orderUpdateError.message, variant: "destructive" });
+      const { error: orderUpdateError } = await supabase
+        .from("orders")
+        .update({ status: "fulfilled" })
+        .eq("id", orderId);
+      if (orderUpdateError)
+        toast({
+          title: "Error updating order status",
+          description: orderUpdateError.message,
+          variant: "destructive",
+        });
     }
 
     toast({ title: "Success", description: "Bill created successfully" });
-    const customerDetails = customers.find(c => c.id === selectedCustomer);
-    if (customerDetails) generatePdf({ ...bill, discount, comments, grandTotal }, billItems, customerDetails);
+    const customerDetails = customers.find((c) => c.id === selectedCustomer);
+    if (customerDetails)
+      generatePdf(
+        { ...bill, discount, comments, grandTotal },
+        billItems,
+        customerDetails
+      );
 
     setSelectedCustomer("");
     setBillItems([]);
@@ -580,24 +830,174 @@ export const Billing = () => {
           </TabsList>
           <TabsContent value="create-bill">
             <Card>
-              <CardHeader><CardTitle>Create a New Bill</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle>Create a New Bill</CardTitle>
+              </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="md:col-span-2">
                     <Label htmlFor="customer">Customer</Label>
-                    <Select value={selectedCustomer} onValueChange={setSelectedCustomer}><SelectTrigger><SelectValue placeholder="Select a customer" /></SelectTrigger><SelectContent>{customers.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}</SelectContent></Select>
+                    <Popover
+                      open={customerSearchOpen}
+                      onOpenChange={setCustomerSearchOpen}
+                    >
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={customerSearchOpen}
+                          className="w-full justify-between"
+                        >
+                          <span className="truncate">
+                            {selectedCustomer
+                              ? customers.find(
+                                  (customer) => customer.id === selectedCustomer
+                                )?.name
+                              : "Select a customer"}
+                          </span>
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[95vw] p-0">
+                        <Command>
+                          <CommandInput
+                            placeholder="Search customers..."
+                            className="h-9"
+                          />
+                          <CommandList className="max-h-[200px]">
+                            <CommandEmpty>No customer found.</CommandEmpty>
+                            <CommandGroup>
+                              {customers.map((customer) => (
+                                <CommandItem
+                                  key={customer.id}
+                                  value={customer.name}
+                                  onSelect={() => {
+                                    setSelectedCustomer(customer.id);
+                                    setCustomerSearchOpen(false);
+                                  }}
+                                  className="cursor-pointer"
+                                >
+                                  <Check
+                                    className={`mr-2 h-4 w-4 ${
+                                      selectedCustomer === customer.id
+                                        ? "opacity-100"
+                                        : "opacity-0"
+                                    }`}
+                                  />
+                                  <div className="flex flex-col">
+                                    <span className="truncate">
+                                      {customer.name}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      Phone:{" "}
+                                      {customer.primary_phone_number || "N/A"}
+                                    </span>
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div>
                     <Label htmlFor="billDate">Bill Date</Label>
-                    <Popover><PopoverTrigger asChild><Button variant={"outline"} className="w-full justify-start text-left font-normal">{billDate ? format(billDate, "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={billDate} onSelect={setBillDate} initialFocus /></PopoverContent></Popover>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant={"outline"}
+                          className="w-full justify-start text-left font-normal"
+                        >
+                          {billDate ? (
+                            format(billDate, "PPP")
+                          ) : (
+                            <span>Pick a date</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={billDate}
+                          onSelect={setBillDate}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label>Add Products</Label>
                   <div className="flex flex-col sm:flex-row gap-2">
-                    <Select value={selectedProduct} onValueChange={setSelectedProduct}><SelectTrigger><SelectValue placeholder="Select a product" /></SelectTrigger><SelectContent>{products.map((p) => (<SelectItem key={p.id} value={p.id}>{p.name} (Stock: {p.inventory?.quantity ?? 0})</SelectItem>))}</SelectContent></Select>
-                    <Button onClick={addItem} className="sm:w-auto w-full"><Plus className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Add</span></Button>
+                    <Popover
+                      open={productSearchOpen}
+                      onOpenChange={setProductSearchOpen}
+                    >
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={productSearchOpen}
+                          className="w-full justify-between"
+                        >
+                          <span className="truncate">
+                            {selectedProduct
+                              ? products.find(
+                                  (product) => product.id === selectedProduct
+                                )?.name
+                              : "Select a product"}
+                          </span>
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[95vw] p-0">
+                        <Command>
+                          <CommandInput
+                            placeholder="Search products..."
+                            className="h-9"
+                          />
+                          <CommandList className="max-h-[200px]">
+                            <CommandEmpty>No product found.</CommandEmpty>
+                            <CommandGroup>
+                              {products.map((product) => (
+                                <CommandItem
+                                  key={product.id}
+                                  value={product.name}
+                                  onSelect={() => {
+                                    setSelectedProduct(product.id);
+                                    setProductSearchOpen(false);
+                                  }}
+                                  className="cursor-pointer"
+                                >
+                                  <Check
+                                    className={`mr-2 h-4 w-4 ${
+                                      selectedProduct === product.id
+                                        ? "opacity-100"
+                                        : "opacity-0"
+                                    }`}
+                                  />
+                                  <div className="flex flex-col">
+                                    <span className="truncate">
+                                      {product.name}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      Stock: {product.inventory?.quantity ?? 0}{" "}
+                                      | Price: ₹{product.price.toFixed(2)}
+                                    </span>
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    <Button onClick={addItem} className="sm:w-auto w-full">
+                      <Plus className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Add</span>
+                    </Button>
                   </div>
                 </div>
 
@@ -606,26 +1006,66 @@ export const Billing = () => {
                   {billItems.map((item, index) => (
                     <Card key={index}>
                       <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-base font-medium">{item.product_name}</CardTitle>
-                        <Button variant="ghost" size="icon" onClick={() => removeItem(index)}><Trash2 className="h-4 w-4" /></Button>
+                        <CardTitle className="text-base font-medium">
+                          {item.product_name}
+                        </CardTitle>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeItem(index)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </CardHeader>
                       <CardContent className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <Label>Lots</Label>
-                            <Input type="number" value={item.lots} onChange={(e) => handleItemChange(index, "lots", e.target.value)} />
+                            <Input
+                              type="number"
+                              value={item.lots}
+                              onChange={(e) =>
+                                handleItemChange(index, "lots", e.target.value)
+                              }
+                            />
                           </div>
                           <div>
                             <Label>Quantity</Label>
-                            <Input type="number" value={item.quantity} onChange={(e) => handleItemChange(index, "quantity", e.target.value)} />
+                            <Input
+                              type="number"
+                              value={item.quantity}
+                              onChange={(e) =>
+                                handleItemChange(
+                                  index,
+                                  "quantity",
+                                  e.target.value
+                                )
+                              }
+                            />
                           </div>
                           <div>
                             <Label>Price/Unit</Label>
-                            <Input type="number" value={item.price} onChange={(e) => handleItemChange(index, "price", e.target.value)} />
+                            <Input
+                              type="number"
+                              value={item.price}
+                              onChange={(e) =>
+                                handleItemChange(index, "price", e.target.value)
+                              }
+                            />
                           </div>
                           <div>
                             <Label>Price/Lot</Label>
-                            <Input type="number" value={item.lot_price} onChange={(e) => handleItemChange(index, "lot_price", e.target.value)} />
+                            <Input
+                              type="number"
+                              value={item.lot_price}
+                              onChange={(e) =>
+                                handleItemChange(
+                                  index,
+                                  "lot_price",
+                                  e.target.value
+                                )
+                              }
+                            />
                           </div>
                         </div>
                         <div className="text-right font-medium">
@@ -643,7 +1083,9 @@ export const Billing = () => {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="min-w-[150px]">Product</TableHead>
+                            <TableHead className="min-w-[150px]">
+                              Product
+                            </TableHead>
                             <TableHead>Lots</TableHead>
                             <TableHead>Quantity</TableHead>
                             <TableHead>Price/Unit</TableHead>
@@ -656,12 +1098,74 @@ export const Billing = () => {
                           {billItems.map((item, index) => (
                             <TableRow key={index}>
                               <TableCell>{item.product_name}</TableCell>
-                              <TableCell><Input type="number" value={item.lots} onChange={(e) => handleItemChange(index, "lots", e.target.value)} className="min-w-[5rem]" /></TableCell>
-                              <TableCell><Input type="number" value={item.quantity} onChange={(e) => handleItemChange(index, "quantity", e.target.value)} className="min-w-[5rem]" /></TableCell>
-                              <TableCell><Input type="number" value={item.price} onChange={(e) => handleItemChange(index, "price", e.target.value)} className="min-w-[5rem]" /></TableCell>
-                              <TableCell><Input type="number" value={item.lot_price} onChange={(e) => handleItemChange(index, "lot_price", e.target.value)} className="min-w-[5rem]" /></TableCell>
-                              <TableCell>₹{(item.quantity * item.price).toFixed(2)}</TableCell>
-                              <TableCell><Button variant="ghost" size="icon" onClick={() => removeItem(index)}><Trash2 className="h-4 w-4" /></Button></TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  value={item.lots}
+                                  onChange={(e) =>
+                                    handleItemChange(
+                                      index,
+                                      "lots",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="min-w-[5rem]"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  value={item.quantity}
+                                  onChange={(e) =>
+                                    handleItemChange(
+                                      index,
+                                      "quantity",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="min-w-[5rem]"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  value={item.price}
+                                  onChange={(e) =>
+                                    handleItemChange(
+                                      index,
+                                      "price",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="min-w-[5rem]"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  value={item.lot_price}
+                                  onChange={(e) =>
+                                    handleItemChange(
+                                      index,
+                                      "lot_price",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="min-w-[5rem]"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                ₹{(item.quantity * item.price).toFixed(2)}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => removeItem(index)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -671,23 +1175,46 @@ export const Billing = () => {
                 </Card>
 
                 <div className="flex items-center space-x-2">
-                  <Checkbox id="include-gst" checked={isGstBill} onCheckedChange={(checked) => setIsGstBill(Boolean(checked))} />
-                  <Label htmlFor="include-gst" className="font-medium">Include GST</Label>
+                  <Checkbox
+                    id="include-gst"
+                    checked={isGstBill}
+                    onCheckedChange={(checked) =>
+                      setIsGstBill(Boolean(checked))
+                    }
+                  />
+                  <Label htmlFor="include-gst" className="font-medium">
+                    Include GST
+                  </Label>
                 </div>
 
                 {isGstBill && (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-lg">
                     <div>
                       <Label htmlFor="sgst">SGST (%)</Label>
-                      <Input id="sgst" type="number" value={sgstPercent} onChange={(e) => setSgstPercent(Number(e.target.value))} />
+                      <Input
+                        id="sgst"
+                        type="number"
+                        value={sgstPercent}
+                        onChange={(e) => setSgstPercent(Number(e.target.value))}
+                      />
                     </div>
                     <div>
                       <Label htmlFor="cgst">CGST (%)</Label>
-                      <Input id="cgst" type="number" value={cgstPercent} onChange={(e) => setCgstPercent(Number(e.target.value))} />
+                      <Input
+                        id="cgst"
+                        type="number"
+                        value={cgstPercent}
+                        onChange={(e) => setCgstPercent(Number(e.target.value))}
+                      />
                     </div>
                     <div>
                       <Label htmlFor="cess">CESS (%)</Label>
-                      <Input id="cess" type="number" value={cessPercent} onChange={(e) => setCessPercent(Number(e.target.value))} />
+                      <Input
+                        id="cess"
+                        type="number"
+                        value={cessPercent}
+                        onChange={(e) => setCessPercent(Number(e.target.value))}
+                      />
                     </div>
                   </div>
                 )}
@@ -695,39 +1222,162 @@ export const Billing = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="discount">Discount (₹)</Label>
-                    <Input id="discount" type="number" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
+                    <Input
+                      id="discount"
+                      type="number"
+                      value={discount}
+                      onChange={(e) => setDiscount(Number(e.target.value))}
+                    />
                   </div>
                   <div className="text-right space-y-1">
                     <p>Subtotal: ₹{billCalculations.taxableValue.toFixed(2)}</p>
                     {isGstBill && (
                       <>
-                        <p>SGST ({sgstPercent}%): ₹{billCalculations.sgst.toFixed(2)}</p>
-                        <p>CGST ({cgstPercent}%): ₹{billCalculations.cgst.toFixed(2)}</p>
-                        {cessPercent > 0 && <p>CESS ({cessPercent}%): ₹{billCalculations.cess.toFixed(2)}</p>}
+                        <p>
+                          SGST ({sgstPercent}%): ₹
+                          {billCalculations.sgst.toFixed(2)}
+                        </p>
+                        <p>
+                          CGST ({cgstPercent}%): ₹
+                          {billCalculations.cgst.toFixed(2)}
+                        </p>
+                        {cessPercent > 0 && (
+                          <p>
+                            CESS ({cessPercent}%): ₹
+                            {billCalculations.cess.toFixed(2)}
+                          </p>
+                        )}
                       </>
                     )}
                     <p>Discount: - ₹{discount.toFixed(2)}</p>
-                    <p className="font-bold text-lg">Grand Total: ₹{billCalculations.grandTotal.toFixed(2)}</p>
+                    <p className="font-bold text-lg">
+                      Grand Total: ₹{billCalculations.grandTotal.toFixed(2)}
+                    </p>
                   </div>
                 </div>
 
                 <div>
                   <Label htmlFor="comments">Comments</Label>
-                  <Textarea id="comments" value={comments} onChange={(e) => setComments(e.target.value)} placeholder="Add any comments for the bill..." />
+                  <Textarea
+                    id="comments"
+                    value={comments}
+                    onChange={(e) => setComments(e.target.value)}
+                    placeholder="Add any comments for the bill..."
+                  />
                 </div>
 
-                <Button onClick={submitBill} disabled={loading} className="w-full sm:w-auto">Create Bill & Download PDF</Button>
+                <Button
+                  onClick={submitBill}
+                  disabled={loading}
+                  className="w-full sm:w-auto"
+                >
+                  Create Bill & Download PDF
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>
           <TabsContent value="all-bills">
             <Card>
-              <CardHeader><CardTitle>All Bills</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle>All Bills</CardTitle>
+              </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-col sm:flex-row gap-2">
-                  <Select value={customerFilter} onValueChange={setCustomerFilter}><SelectTrigger><SelectValue placeholder="Filter by customer" /></SelectTrigger><SelectContent><SelectItem value="all">All Customers</SelectItem>{customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger><SelectValue placeholder="Filter by status" /></SelectTrigger><SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="outstanding">Outstanding</SelectItem><SelectItem value="paid">Paid</SelectItem><SelectItem value="partial">Partial</SelectItem></SelectContent></Select>
-                  <Select value={gstFilter} onValueChange={setGstFilter}><SelectTrigger><SelectValue placeholder="Filter by GST" /></SelectTrigger><SelectContent><SelectItem value="all">All Bills</SelectItem><SelectItem value="gst">GST</SelectItem><SelectItem value="non-gst">Non-GST</SelectItem></SelectContent></Select>
+                  <Popover
+                    open={customerFilterSearchOpen}
+                    onOpenChange={setCustomerFilterSearchOpen}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={customerFilterSearchOpen}
+                        className="w-full justify-between"
+                      >
+                        <span className="truncate">
+                          {customerFilter !== "all"
+                            ? customers.find(
+                                (customer) => customer.id === customerFilter
+                              )?.name
+                            : "Filter by customer"}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[200px] p-0">
+                      <Command>
+                        <CommandInput
+                          placeholder="Search customers..."
+                          className="h-9"
+                        />
+                        <CommandList className="max-h-[200px]">
+                          <CommandEmpty>No customer found.</CommandEmpty>
+                          <CommandGroup>
+                            <CommandItem
+                              value="all"
+                              onSelect={() => {
+                                setCustomerFilter("all");
+                                setCustomerFilterSearchOpen(false);
+                              }}
+                              className="cursor-pointer"
+                            >
+                              <Check
+                                className={`mr-2 h-4 w-4 ${
+                                  customerFilter === "all"
+                                    ? "opacity-100"
+                                    : "opacity-0"
+                                }`}
+                              />
+                              <span>All Customers</span>
+                            </CommandItem>
+                            {customers.map((customer) => (
+                              <CommandItem
+                                key={customer.id}
+                                value={customer.name}
+                                onSelect={() => {
+                                  setCustomerFilter(customer.id);
+                                  setCustomerFilterSearchOpen(false);
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <Check
+                                  className={`mr-2 h-4 w-4 ${
+                                    customerFilter === customer.id
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  }`}
+                                />
+                                <span className="truncate">
+                                  {customer.name}
+                                </span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Filter by status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="outstanding">Outstanding</SelectItem>
+                      <SelectItem value="paid">Paid</SelectItem>
+                      <SelectItem value="partial">Partial</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={gstFilter} onValueChange={setGstFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Filter by GST" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Bills</SelectItem>
+                      <SelectItem value="gst">GST</SelectItem>
+                      <SelectItem value="non-gst">Non-GST</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Mobile View for All Bills */}
@@ -735,28 +1385,60 @@ export const Billing = () => {
                   {filteredBills.map((bill) => (
                     <Card key={bill.id}>
                       <CardHeader>
-                        <CardTitle className="text-base font-medium">Bill #{bill.id.slice(0, 6)}...</CardTitle>
-                        <p className="text-sm text-muted-foreground">{bill.customers?.name || 'N/A'}</p>
+                        <CardTitle className="text-base font-medium">
+                          Bill #{bill.id.slice(0, 6)}...
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground">
+                          {bill.customers?.name || "N/A"}
+                        </p>
                       </CardHeader>
                       <CardContent className="space-y-3">
                         <div className="flex justify-between text-sm">
                           <span>Date:</span>
-                          <span>{new Date(bill.date_of_bill).toLocaleDateString()}</span>
+                          <span>
+                            {new Date(bill.date_of_bill).toLocaleDateString()}
+                          </span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span>Amount:</span>
-                          <span className="font-bold">₹{bill.total_amount.toFixed(2)}</span>
+                          <span className="font-bold">
+                            ₹{bill.total_amount.toFixed(2)}
+                          </span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span>GST Bill:</span>
                           <span>{bill.is_gst_bill ? "Yes" : "No"}</span>
                         </div>
                         <div className="flex items-center justify-between pt-2">
-                          <Badge variant={bill.status === "paid" ? "default" : bill.status === "outstanding" ? "destructive" : "secondary"}>{bill.status}</Badge>
+                          <Badge
+                            variant={
+                              bill.status === "paid"
+                                ? "default"
+                                : bill.status === "outstanding"
+                                ? "destructive"
+                                : "secondary"
+                            }
+                          >
+                            {bill.status}
+                          </Badge>
                           <div className="flex space-x-2">
-                            <Button variant="outline" size="sm" onClick={() => handleDownloadPdf(bill.id)}><Download className="mr-2 h-4 w-4" />PDF</Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownloadPdf(bill.id)}
+                            >
+                              <Download className="mr-2 h-4 w-4" />
+                              PDF
+                            </Button>
                             <AlertDialogTrigger asChild>
-                              <Button variant="destructive" size="sm" onClick={() => setBillToDelete(bill.id)}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => setBillToDelete(bill.id)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete
+                              </Button>
                             </AlertDialogTrigger>
                           </div>
                         </div>
@@ -783,16 +1465,46 @@ export const Billing = () => {
                       {filteredBills.map((bill) => (
                         <TableRow key={bill.id}>
                           <TableCell>#{bill.id.slice(0, 6)}...</TableCell>
-                          <TableCell>{bill.customers?.name || 'N/A'}</TableCell>
-                          <TableCell>{new Date(bill.date_of_bill).toLocaleDateString()}</TableCell>
+                          <TableCell>{bill.customers?.name || "N/A"}</TableCell>
+                          <TableCell>
+                            {new Date(bill.date_of_bill).toLocaleDateString()}
+                          </TableCell>
                           <TableCell>₹{bill.total_amount.toFixed(2)}</TableCell>
-                          <TableCell><Badge variant={bill.status === "paid" ? "default" : bill.status === "outstanding" ? "destructive" : "secondary"}>{bill.status}</Badge></TableCell>
-                          <TableCell>{bill.is_gst_bill ? "Yes" : "No"}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                bill.status === "paid"
+                                  ? "default"
+                                  : bill.status === "outstanding"
+                                  ? "destructive"
+                                  : "secondary"
+                              }
+                            >
+                              {bill.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {bill.is_gst_bill ? "Yes" : "No"}
+                          </TableCell>
                           <TableCell>
                             <div className="flex space-x-2">
-                              <Button variant="outline" size="sm" onClick={() => handleDownloadPdf(bill.id)}><Download className="mr-2 h-4 w-4" />PDF</Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDownloadPdf(bill.id)}
+                              >
+                                <Download className="mr-2 h-4 w-4" />
+                                PDF
+                              </Button>
                               <AlertDialogTrigger asChild>
-                                <Button variant="destructive" size="sm" onClick={() => setBillToDelete(bill.id)}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => setBillToDelete(bill.id)}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
+                                </Button>
                               </AlertDialogTrigger>
                             </div>
                           </TableCell>
@@ -809,13 +1521,16 @@ export const Billing = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the bill, revert the stock levels, and update the customer's balance.
+              This action cannot be undone. This will permanently delete the
+              bill, revert the stock levels, and update the customer's balance.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setBillToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setBillToDelete(null)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteBill} disabled={loading}>
-              {loading ? 'Deleting...' : 'Continue'}
+              {loading ? "Deleting..." : "Continue"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
