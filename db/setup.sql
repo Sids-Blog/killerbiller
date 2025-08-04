@@ -569,6 +569,8 @@ DROP POLICY IF EXISTS "Allow all access to all users" ON user_roles;
 CREATE POLICY "Allow all access to all users" ON user_roles FOR ALL USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Allow all access to all users" ON public.users;
 CREATE POLICY "Allow all access to all users" ON public.users FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON credit;
+CREATE POLICY "Allow all access to all users" ON credit FOR ALL USING (true) WITH CHECK (true);
 
 
 -- === INDEXES for Performance ===

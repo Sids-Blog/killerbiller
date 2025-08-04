@@ -40,7 +40,18 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
           !isMobile && (isSidebarCollapsed ? "ml-20" : "ml-64")
         )}
       >
-        <header className="sticky top-0 z-10 flex items-center justify-between h-16 px-4 bg-background/80 backdrop-blur-sm border-b border-border md:justify-end">
+        <header className="sticky top-0 z-10 flex items-center justify-between h-16 px-4 bg-background/80 backdrop-blur-sm border-b border-border">
+          <div className="flex items-center space-x-4 align-middle justify-center">
+            <img
+              src="https://uploads.turbologo.com/uploads/design/preview_image/68460538/preview_image20241130-1-1mybbz0.png" // Placeholder image
+              alt="KillerBiller Logo"
+              className="h-8 w-auto"
+            />
+            <h1 className="text-lg font-semibold text-foreground">
+            KillerBiller
+          </h1>
+          </div>
+          
           <Button
             variant="ghost"
             size="icon"
