@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS inventory (
 -- Create Bills table
 CREATE TABLE IF NOT EXISTS bills (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_number TEXT UNIQUE,
   customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
   total_amount NUMERIC(10, 2) NOT NULL,
   paid_amount NUMERIC(10, 2) DEFAULT 0.00,
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS bill_items (
 -- Create Orders table
 CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_number TEXT UNIQUE,
   customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
   status TEXT NOT NULL DEFAULT 'pending', -- pending, fulfilled
   comments TEXT,
@@ -134,6 +136,17 @@ CREATE TABLE IF NOT EXISTS public.damaged_stock_log (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT damaged_stock_log_pkey PRIMARY KEY (id),
     CONSTRAINT damaged_stock_log_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE
+);
+
+-- Create Credit table
+CREATE TABLE IF NOT EXISTS credit (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  vendor_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+  amount NUMERIC(10, 2) NOT NULL,
+  date TIMESTAMPTZ DEFAULT now(),
+  comments TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'redeemed')),
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Create Roles table
@@ -349,6 +362,51 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION get_vendors_with_credit_balances()
+RETURNS TABLE(
+    id UUID,
+    name TEXT,
+    primary_phone_number TEXT,
+    address TEXT,
+    gst_number TEXT,
+    manager_name TEXT,
+    manager_phone_number TEXT,
+    comments TEXT,
+    type TEXT,
+    is_active BOOLEAN,
+    outstanding_balance NUMERIC,
+    credit_balance NUMERIC
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    c.id,
+    c.name,
+    c.primary_phone_number,
+    c.address,
+    c.gst_number,
+    c.manager_name,
+    c.manager_phone_number,
+    c.comments,
+    c.type,
+    c.is_active,
+    c.outstanding_balance,
+    COALESCE(cr.pending_credits, 0) as credit_balance
+  FROM customers c
+  LEFT JOIN (
+    SELECT 
+      vendor_id,
+      SUM(amount) as pending_credits
+    FROM credit 
+    WHERE status = 'pending'
+    GROUP BY vendor_id
+  ) cr ON c.id = cr.vendor_id
+  WHERE c.type = 'vendor' AND c.is_active = true
+  ORDER BY c.name;
+END;
+$$ LANGUAGE plpgsql;
+
+
 -- Function to delete a bill and handle all related data
 CREATE OR REPLACE FUNCTION delete_bill(p_bill_id UUID)
 RETURNS VOID AS $$
@@ -402,6 +460,66 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Create sequence for invoice numbers
+CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START 1;
+
+-- Create sequence for order numbers  
+CREATE SEQUENCE IF NOT EXISTS order_number_seq START 1;
+
+-- Function to generate next invoice number (INV000001 format)
+CREATE OR REPLACE FUNCTION generate_invoice_number()
+RETURNS TEXT AS $$
+DECLARE
+  next_num INTEGER;
+BEGIN
+  next_num := nextval('invoice_number_seq');
+  RETURN 'INV' || LPAD(next_num::TEXT, 6, '0');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to generate next order number (ORD000001 format)
+CREATE OR REPLACE FUNCTION generate_order_number()
+RETURNS TEXT AS $$
+DECLARE
+  next_num INTEGER;
+BEGIN
+  next_num := nextval('order_number_seq');
+  RETURN 'ORD' || LPAD(next_num::TEXT, 6, '0');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Add invoice_number column to existing bills table if it doesn't exist
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bills' AND column_name = 'invoice_number') THEN
+    ALTER TABLE bills ADD COLUMN invoice_number TEXT UNIQUE;
+    
+    -- Update existing bills with formatted invoice numbers
+    UPDATE bills 
+    SET invoice_number = 'INV' || LPAD(ROW_NUMBER() OVER (ORDER BY created_at)::TEXT, 6, '0')
+    WHERE invoice_number IS NULL;
+    
+    -- Set the sequence to continue from the current max
+    SELECT setval('invoice_number_seq', COALESCE((SELECT MAX(CAST(SUBSTRING(invoice_number FROM 4) AS INTEGER)) FROM bills WHERE invoice_number LIKE 'INV%'), 0));
+  END IF;
+END $$;
+
+-- Add order_number column to existing orders table if it doesn't exist
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'order_number') THEN
+    ALTER TABLE orders ADD COLUMN order_number TEXT UNIQUE;
+    
+    -- Update existing orders with formatted order numbers
+    UPDATE orders 
+    SET order_number = 'ORD' || LPAD(ROW_NUMBER() OVER (ORDER BY created_at)::TEXT, 6, '0')
+    WHERE order_number IS NULL;
+    
+    -- Set the sequence to continue from the current max
+    SELECT setval('order_number_seq', COALESCE((SELECT MAX(CAST(SUBSTRING(order_number FROM 4) AS INTEGER)) FROM orders WHERE order_number LIKE 'ORD%'), 0));
+  END IF;
+END $$;
+
 
 -- === ROW LEVEL SECURITY (RLS) ===
 
@@ -419,6 +537,7 @@ ALTER TABLE public.damaged_stock_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credit ENABLE ROW LEVEL SECURITY;
 
 
 -- Note: These are placeholder policies. Adapt them to your authentication setup.
@@ -468,6 +587,41 @@ CREATE INDEX IF NOT EXISTS idx_transactions_customer_id ON transactions(customer
 
 
 -- === TRIGGERS ===
+
+-- Trigger function to set invoice_number on bill insert
+CREATE OR REPLACE FUNCTION set_invoice_number()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.invoice_number IS NULL THEN
+    NEW.invoice_number := generate_invoice_number();
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger function to set order_number on order insert
+CREATE OR REPLACE FUNCTION set_order_number()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.order_number IS NULL THEN
+    NEW.order_number := generate_order_number();
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create triggers
+DROP TRIGGER IF EXISTS trigger_set_invoice_number ON bills;
+CREATE TRIGGER trigger_set_invoice_number
+  BEFORE INSERT ON bills
+  FOR EACH ROW
+  EXECUTE FUNCTION set_invoice_number();
+
+DROP TRIGGER IF EXISTS trigger_set_order_number ON orders;
+CREATE TRIGGER trigger_set_order_number
+  BEFORE INSERT ON orders
+  FOR EACH ROW
+  EXECUTE FUNCTION set_order_number();
 
 -- Trigger to automatically update the 'updated_at' timestamp in the inventory table
 CREATE OR REPLACE FUNCTION update_inventory_timestamp()

@@ -173,6 +173,8 @@ export const DamagedStock = () => {
       return;
     }
 
+    const totalValue = formData.quantity * formData.unit_cost;
+    
     const { error: logError } = await supabase.from("damaged_stock_log").insert([
       {
         product_id: formData.product_id,
@@ -188,6 +190,24 @@ export const DamagedStock = () => {
       return;
     }
 
+    // Create credit record for the damaged stock
+    const productName = products.find(p => p.id === formData.product_id)?.name || 'Unknown Product';
+    const creditComments = `Credit for damaged stock: ${productName} (Qty: ${formData.quantity}, Reason: ${formData.reason || 'Not specified'})`;
+    
+    const { error: creditError } = await supabase.from("credit").insert([
+      {
+        vendor_id: formData.vendor_id,
+        amount: totalValue,
+        date: new Date().toISOString(),
+        comments: creditComments,
+        status: 'pending'
+      },
+    ]);
+
+    if (creditError) {
+      toast({ title: "Warning", description: "Damaged stock logged but failed to create credit record.", variant: "destructive" });
+    }
+
     const { error: stockError } = await supabase.rpc("decrement_stock_from_damage", {
       p_product_id: formData.product_id,
       p_quantity: formData.quantity,
@@ -196,7 +216,8 @@ export const DamagedStock = () => {
     if (stockError) {
       toast({ title: "Error updating stock", description: stockError.message, variant: "destructive" });
     } else {
-      toast({ title: "Success", description: "Damaged stock logged successfully." });
+      const creditMessage = creditError ? " Credit record creation failed." : " Credit record created automatically.";
+      toast({ title: "Success", description: `Damaged stock logged successfully.${creditMessage}` });
       fetchLogs();
       setIsDialogOpen(false);
       setFormData({ product_id: "", vendor_id: "", quantity: 0, unit_cost: 0, reason: "" });

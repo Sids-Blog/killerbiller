@@ -4,6 +4,7 @@ import React from 'react';
 
 interface Bill {
   id: string;
+  invoice_number: string;
   created_at: string;
   date_of_bill: string;
   total_amount: number;
@@ -107,7 +108,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
                 <tbody>
                   <tr>
                     <td style={{ padding: '2px', fontWeight: 'bold' }}>Invoice No.</td>
-                    <td style={{ padding: '2px' }}>#{billDetails.id}</td>
+                    <td style={{ padding: '2px' }}>{billDetails.invoice_number}</td>
                   </tr>
                   <tr>
                     <td style={{ padding: '2px', fontWeight: 'bold' }}>Dated</td>
@@ -119,7 +120,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
                   </tr>
                   <tr>
                     <td style={{ padding: '2px', fontWeight: 'bold' }}>Reference No. & Date</td>
-                    <td style={{ padding: '2px' }}>{billDetails.id} dt. {new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
+                    <td style={{ padding: '2px' }}>{billDetails.invoice_number} dt. {new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
                   </tr>
                   <tr>
                     <td style={{ padding: '2px', fontWeight: 'bold' }}>Buyer's Order No.</td>

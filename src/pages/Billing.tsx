@@ -54,6 +54,7 @@ import { format } from "date-fns";
 import { Checkbox } from "@/components/ui/checkbox";
 import html2pdf from "html2pdf.js";
 import InvoiceTemplate from "@/components/templates/InvoiceTemplate";
+import ReceiptTemplate from "@/components/templates/ReceiptTemplate";
 import { createRoot } from "react-dom/client";
 import { Customer } from "./Customers";
 import { exportToCSV, formatCurrency, formatDate } from "@/lib/csv-export";
@@ -80,6 +81,7 @@ interface Product {
 
 interface Bill {
   id: string;
+  invoice_number: string;
   created_at: string;
   date_of_bill: string;
   total_amount: number;
@@ -162,7 +164,7 @@ export const Billing = () => {
     const billsPromise = supabase
       .from("bills")
       .select(
-        "id, created_at, date_of_bill, total_amount, status, is_gst_bill, customers ( name )"
+        "id, invoice_number, created_at, date_of_bill, total_amount, status, is_gst_bill, customers ( name )"
       )
       .order("date_of_bill", { ascending: false });
 
@@ -616,6 +618,225 @@ export const Billing = () => {
     document.addEventListener("keydown", handleEscKey);
   };
 
+  const previewReceipt = (
+    billDetails: Bill,
+    items: BillItem[],
+    customerDetails: Customer
+  ) => {
+    // Create a modal container
+    const modal = document.createElement("div");
+    modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.8);
+    z-index: 10000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-y: auto;
+    padding: 20px;
+    box-sizing: border-box;
+  `;
+
+    // Create content container with responsive dimensions
+    const content = document.createElement("div");
+    const A4_WIDTH_MM = 210;
+    const A4_HEIGHT_MM = 297;
+    const isMobileView = window.innerWidth < 768;
+
+    content.style.cssText = `
+    background-color: white;
+    width: ${isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`};
+    min-width: ${isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`};
+    max-width: ${isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`};
+    min-height: ${isMobileView ? '100vh' : `${A4_HEIGHT_MM}mm`};
+    position: relative;
+    border-radius: ${isMobileView ? '0' : '8px'};
+    box-shadow: ${isMobileView ? 'none' : '0 10px 30px rgba(0,0,0,0.3)'};
+    margin: auto;
+    overflow: ${isMobileView ? 'auto' : 'visible'};
+  `;
+
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+
+    // Control panel (buttons) - positioned outside React root
+    const controlPanel = document.createElement("div");
+    const isMobile = window.innerWidth < 768;
+    
+    controlPanel.style.cssText = `
+    position: fixed;
+    top: ${isMobile ? '20px' : '10px'};
+    right: ${isMobile ? '20px' : '10px'};
+    display: flex;
+    gap: ${isMobile ? '12px' : '10px'};
+    z-index: 10002;
+    background: rgba(255, 255, 255, 0.95);
+    padding: ${isMobile ? '12px' : '8px'};
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    backdrop-filter: blur(10px);
+  `;
+
+    // Download button
+    const downloadButton = document.createElement("button");
+    downloadButton.innerHTML = isMobile ? "📄" : "📄 Receipt";
+    downloadButton.style.cssText = `
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: ${isMobile ? '10px 12px' : '6px 12px'};
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: ${isMobile ? '16px' : '12px'};
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(40,167,69,0.3);
+    min-width: ${isMobile ? '44px' : 'auto'};
+    min-height: ${isMobile ? '44px' : 'auto'};
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  `;
+
+    // Close button
+    const closeButton = document.createElement("button");
+    closeButton.innerHTML = "✕";
+    closeButton.style.cssText = `
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: ${isMobile ? '10px 12px' : '6px 10px'};
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: ${isMobile ? '18px' : '12px'};
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(220,53,69,0.3);
+    min-width: ${isMobile ? '44px' : 'auto'};
+    min-height: ${isMobile ? '44px' : 'auto'};
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  `;
+
+    const cleanup = () => {
+      root.unmount();
+      document.body.removeChild(modal);
+    };
+
+    downloadButton.onclick = async () => {
+      try {
+        downloadButton.innerHTML = "⏳...";
+        downloadButton.disabled = true;
+
+        // Use the visible content for PDF generation
+        const pdfOptions = {
+          margin: 0.4,
+          filename: `receipt_${billDetails.id.substring(0, 8)}.pdf`,
+          image: {
+            type: "jpeg",
+            quality: 0.98,
+          },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: "#ffffff",
+            logging: false,
+            width: content.offsetWidth,
+            height: content.offsetHeight,
+            scrollX: 0,
+            scrollY: 0,
+            windowWidth: content.offsetWidth,
+            windowHeight: content.offsetHeight,
+          },
+          jsPDF: {
+            unit: "mm",
+            format: "a4",
+            orientation: "portrait",
+            compress: true,
+          },
+        };
+
+        // Generate PDF from the visible modal content
+        await html2pdf().from(content).set(pdfOptions).save();
+
+        toast({
+          title: "Receipt Downloaded Successfully",
+          description: "Your receipt has been downloaded.",
+          variant: "default",
+        });
+      } catch (error: any) {
+        console.error("PDF generation error:", error);
+        toast({
+          title: "PDF Generation Failed",
+          description:
+            error.message ||
+            "There was an error generating the PDF. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        downloadButton.innerHTML = "📄 Receipt";
+        downloadButton.disabled = false;
+      }
+    };
+
+    closeButton.onclick = cleanup;
+
+    // Add buttons to control panel
+    controlPanel.appendChild(downloadButton);
+    controlPanel.appendChild(closeButton);
+    
+    // Add control panel to modal (not content)
+    modal.appendChild(controlPanel);
+
+    // Render the receipt with responsive dimensions
+    const root = createRoot(content);
+    root.render(
+      <div
+        style={{
+          width: isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`,
+          minWidth: isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`,
+          maxWidth: isMobileView ? '100vw' : `${A4_WIDTH_MM}mm`,
+          minHeight: isMobileView ? '100vh' : `${A4_HEIGHT_MM}mm`,
+          backgroundColor: "white",
+          margin: 0,
+          padding: isMobileView ? '10px' : 0,
+          boxSizing: "border-box",
+          overflow: isMobileView ? 'auto' : 'hidden',
+          transform: isMobileView ? 'scale(0.8)' : 'none',
+          transformOrigin: 'top left',
+        }}
+      >
+        <ReceiptTemplate
+          billDetails={billDetails}
+          items={items}
+          customerDetails={customerDetails}
+        />
+      </div>
+    );
+
+    // Close modal when clicking outside (but not on buttons)
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        cleanup();
+      }
+    };
+
+    // Handle ESC key to close modal
+    const handleEscKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        cleanup();
+        document.removeEventListener("keydown", handleEscKey);
+      }
+    };
+    document.addEventListener("keydown", handleEscKey);
+  };
+
   // Simplified generatePdf function that just calls previewInvoice
   const generatePdf = async (
     billDetails: Bill,
@@ -691,6 +912,74 @@ export const Billing = () => {
 
     //generatePdf(billDetails, itemsForPdf, customer);
     previewInvoice(billDetails, itemsForPdf, customer);
+    setLoading(false);
+  };
+
+  const handleDownloadReceipt = async (billId: string) => {
+    setLoading(true);
+    const { data: billDetails, error: billError } = await supabase
+      .from("bills")
+      .select("*, customers(*)")
+      .eq("id", billId)
+      .single();
+
+    if (billError || !billDetails) {
+      toast({
+        title: "Error fetching bill details",
+        description: billError?.message,
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
+
+    const { data: billItemsData, error: itemsError } = await supabase
+      .from("bill_items")
+      .select("*, products(name)")
+      .eq("bill_id", billId);
+
+    if (itemsError || !billItemsData) {
+      toast({
+        title: "Error fetching bill items",
+        description: itemsError?.message,
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
+
+    const customer = Array.isArray(billDetails.customers)
+      ? billDetails.customers[0]
+      : billDetails.customers;
+
+    if (!customer) {
+      toast({
+        title: "Error",
+        description: "Customer details not found for this bill.",
+        variant: "destructive",
+      });
+      setLoading(false);
+      return;
+    }
+
+    const itemsForPdf: BillItem[] = billItemsData.map(
+      (item: {
+        product_id: string;
+        products: { name: string };
+        quantity: number;
+        price: number;
+      }) => ({
+        product_id: item.product_id,
+        product_name: item.products?.name || "Unknown Product",
+        quantity: item.quantity,
+        price: item.price,
+        master_lot_size: 0,
+        lots: "",
+        lot_price: 0,
+      })
+    );
+
+    previewReceipt(billDetails, itemsForPdf, customer);
     setLoading(false);
   };
 
@@ -1305,10 +1594,10 @@ export const Billing = () => {
                       try {
                         exportToCSV({
                           filename: 'all-bills',
-                          headers: ['Bill ID', 'Customer', 'Date', 'Amount', 'Status', 'GST Bill', 'Created At'],
+                          headers: ['Invoice Number', 'Customer', 'Date', 'Amount', 'Status', 'GST Bill', 'Created At'],
                           data: filteredBills,
                           transformData: (bill) => ({
-                            'Bill ID': bill.id,
+                            'Invoice Number': bill.invoice_number || bill.id,
                             'Customer': bill.customers?.name || 'N/A',
                             'Date': formatDate(bill.date_of_bill),
                             'Amount': formatCurrency(bill.total_amount),
@@ -1434,7 +1723,7 @@ export const Billing = () => {
                     <Card key={bill.id}>
                       <CardHeader>
                         <CardTitle className="text-base font-medium">
-                          Bill #{bill.id.slice(0, 6)}...
+                          {bill.invoice_number || `#${bill.id.slice(0, 6)}...`}
                         </CardTitle>
                         <p className="text-sm text-muted-foreground">
                           {bill.customers?.name || "N/A"}
@@ -1478,6 +1767,15 @@ export const Billing = () => {
                               <Download className="mr-2 h-4 w-4" />
                               PDF
                             </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownloadReceipt(bill.id)}
+                              className="bg-green-50 hover:bg-green-100"
+                            >
+                              <Download className="mr-2 h-4 w-4" />
+                              Receipt
+                            </Button>
                             <AlertDialogTrigger asChild>
                               <Button
                                 variant="destructive"
@@ -1500,7 +1798,7 @@ export const Billing = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Bill ID</TableHead>
+                        <TableHead>Invoice No</TableHead>
                         <TableHead>Customer</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Amount</TableHead>
@@ -1512,7 +1810,7 @@ export const Billing = () => {
                     <TableBody>
                       {filteredBills.map((bill) => (
                         <TableRow key={bill.id}>
-                          <TableCell>#{bill.id.slice(0, 6)}...</TableCell>
+                          <TableCell>{bill.invoice_number || `#${bill.id.slice(0, 6)}...`}</TableCell>
                           <TableCell>{bill.customers?.name || "N/A"}</TableCell>
                           <TableCell>
                             {new Date(bill.date_of_bill).toLocaleDateString()}
@@ -1543,6 +1841,15 @@ export const Billing = () => {
                               >
                                 <Download className="mr-2 h-4 w-4" />
                                 PDF
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDownloadReceipt(bill.id)}
+                                className="bg-green-50 hover:bg-green-100"
+                              >
+                                <Download className="mr-2 h-4 w-4" />
+                                Receipt
                               </Button>
                               <AlertDialogTrigger asChild>
                                 <Button

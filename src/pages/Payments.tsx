@@ -13,6 +13,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -22,7 +30,7 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
-import { CreditCard, ArrowDownCircle, CalendarIcon, ChevronsUpDown, Check, Download } from "lucide-react";
+import { CreditCard, ArrowDownCircle, CalendarIcon, ChevronsUpDown, Check, Download, Receipt } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -48,6 +56,14 @@ interface Customer {
   type: "customer" | "vendor";
 }
 
+interface Vendor {
+  id: string;
+  name: string;
+  outstanding_balance: number;
+  credit_balance: number;
+  type: "vendor";
+}
+
 interface Transaction {
   id: string;
   amount: number;
@@ -65,6 +81,17 @@ interface ExpenseCategory {
   name: string;
 }
 
+interface Credit {
+  id: string;
+  vendor_id: string;
+  amount: number;
+  date: string;
+  comments: string | null;
+  status: "pending" | "redeemed";
+  created_at: string;
+  customers: { name: string } | null;
+}
+
 export const Payments = () => {
   const { toast } = useToast();
   // Form States
@@ -78,10 +105,14 @@ export const Payments = () => {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [expenseComments, setExpenseComments] = useState("");
   const [expenseDate, setExpenseDate] = useState<Date | undefined>(new Date());
+  const [creditAmount, setCreditAmount] = useState(0);
+  const [selectedCreditVendor, setSelectedCreditVendor] = useState("");
+  const [creditComments, setCreditComments] = useState("");
+  const [creditDate, setCreditDate] = useState<Date | undefined>(new Date());
 
   // Shared State
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [vendors, setVendors] = useState<Customer[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,6 +124,17 @@ export const Payments = () => {
   const [partySearchOpen, setPartySearchOpen] = useState(false);
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
   const [vendorSearchOpen, setVendorSearchOpen] = useState(false);
+  const [creditVendorSearchOpen, setCreditVendorSearchOpen] = useState(false);
+  const [credits, setCredits] = useState<Credit[]>([]);
+  const [filteredCredits, setFilteredCredits] = useState<Credit[]>([]);
+  const [editingCredit, setEditingCredit] = useState<Credit | null>(null);
+  const [isEditCreditDialogOpen, setIsEditCreditDialogOpen] = useState(false);
+  
+  // Credit filters
+  const [creditStatusFilter, setCreditStatusFilter] = useState("all");
+  const [creditVendorFilter, setCreditVendorFilter] = useState("all");
+  const [creditDateRange, setCreditDateRange] = useState<DateRange | undefined>();
+  const [creditVendorFilterSearchOpen, setCreditVendorFilterSearchOpen] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
@@ -107,7 +149,8 @@ export const Payments = () => {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const customersPromise = supabase.from("customers").select("id, name, outstanding_balance, type").eq("is_active", true).order("name");
+    const customersPromise = supabase.from("customers").select("id, name, outstanding_balance, type").eq("is_active", true).eq("type", "customer").order("name");
+    const vendorsPromise = supabase.from("customers").select("id, name, outstanding_balance, type").eq("is_active", true).eq("type", "vendor").order("name");
     const categoriesPromise = supabase.from("expense_categories").select("*").order("name");
     
     let query = supabase.from("transactions").select(`
@@ -127,14 +170,12 @@ export const Payments = () => {
     if (dateRange?.to) query = query.lte('date_of_transaction', dateRange.to.toISOString());
 
     const transactionsPromise = query.order("date_of_transaction", { ascending: false });
+    const creditsPromise = supabase.from("credit").select("*, customers(name)").order("created_at", { ascending: false });
 
-    const [customersRes, categoriesRes, transactionsRes] = await Promise.all([customersPromise, categoriesPromise, transactionsPromise]);
+    const [customersRes, vendorsRes, categoriesRes, transactionsRes, creditsRes] = await Promise.all([customersPromise, vendorsPromise, categoriesPromise, transactionsPromise, creditsPromise]);
 
-    if (customersRes.error) toast({ title: "Error fetching customers/vendors", description: customersRes.error.message, variant: "destructive" });
-    else {
-      setCustomers(customersRes.data.filter(c => c.type === 'customer') || []);
-      setVendors(customersRes.data.filter(c => c.type === 'vendor') || []);
-    }
+    if (customersRes.error) toast({ title: "Error fetching customers", description: customersRes.error.message, variant: "destructive" });
+    else setCustomers(customersRes.data || []);
 
     if (categoriesRes.error) toast({ title: "Error fetching expense categories", description: categoriesRes.error.message, variant: "destructive" });
     else setExpenseCategories(categoriesRes.data || []);
@@ -142,12 +183,57 @@ export const Payments = () => {
     if (transactionsRes.error) toast({ title: "Error fetching transactions", description: transactionsRes.error.message, variant: "destructive" });
     else setTransactions(transactionsRes.data as unknown as Transaction[]);
 
+    if (creditsRes.error) toast({ title: "Error fetching credits", description: creditsRes.error.message, variant: "destructive" });
+    else setCredits(creditsRes.data as unknown as Credit[]);
+
+    // Calculate vendor credit balances after credits are loaded
+    if (vendorsRes.error) toast({ title: "Error fetching vendors", description: vendorsRes.error.message, variant: "destructive" });
+    else {
+      const creditsData = creditsRes.data as unknown as Credit[] || [];
+      const vendorsWithCredits = vendorsRes.data?.map(vendor => {
+        const pendingCredits = creditsData.filter(credit => 
+          credit.vendor_id === vendor.id && credit.status === 'pending'
+        ).reduce((sum, credit) => sum + credit.amount, 0);
+        
+        return {
+          ...vendor,
+          credit_balance: pendingCredits
+        };
+      }) || [];
+      setVendors(vendorsWithCredits);
+    }
+
     setLoading(false);
   }, [toast, typeFilter, partyFilter, dateRange]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Filter credits based on active filters
+  useEffect(() => {
+    let result = credits;
+    
+    // Filter by status
+    if (creditStatusFilter !== "all") {
+      result = result.filter(credit => credit.status === creditStatusFilter);
+    }
+    
+    // Filter by vendor
+    if (creditVendorFilter !== "all") {
+      result = result.filter(credit => credit.vendor_id === creditVendorFilter);
+    }
+    
+    // Filter by date range
+    if (creditDateRange?.from && creditDateRange?.to) {
+      result = result.filter(credit => {
+        const creditDate = new Date(credit.date);
+        return creditDate >= creditDateRange.from! && creditDate <= creditDateRange.to!;
+      });
+    }
+    
+    setFilteredCredits(result);
+  }, [credits, creditStatusFilter, creditVendorFilter, creditDateRange]);
 
   useEffect(() => {
     const fetchCustomerBills = async () => {
@@ -201,6 +287,85 @@ export const Payments = () => {
     setIsSubmitting(false);
   };
 
+  const recordCredit = async () => {
+    if (creditAmount <= 0 || !selectedCreditVendor) {
+      toast({ title: "Error", description: "Please enter an amount and select a vendor.", variant: "destructive" });
+      return;
+    }
+    setIsSubmitting(true);
+    const { error } = await supabase.from('credit').insert([{
+      vendor_id: selectedCreditVendor,
+      amount: creditAmount,
+      date: creditDate?.toISOString(),
+      comments: creditComments,
+      status: 'pending'
+    }]);
+    if (error) toast({ title: "Error recording credit", description: error.message, variant: "destructive" });
+    else {
+      toast({ title: "Success", description: "Credit recorded successfully." });
+      setCreditAmount(0);
+      setSelectedCreditVendor("");
+      setCreditComments("");
+      setCreditDate(new Date());
+      fetchData();
+    }
+    setIsSubmitting(false);
+  };
+
+  const openEditCreditDialog = (credit: Credit) => {
+    setEditingCredit(credit);
+    setSelectedCreditVendor(credit.vendor_id);
+    setCreditAmount(credit.amount);
+    setCreditDate(new Date(credit.date));
+    setCreditComments(credit.comments || "");
+    setIsEditCreditDialogOpen(true);
+  };
+
+  const updateCreditStatus = async (creditId: string, newStatus: 'pending' | 'redeemed') => {
+    const { error } = await supabase
+      .from('credit')
+      .update({ status: newStatus })
+      .eq('id', creditId);
+
+    if (error) {
+      toast({ title: "Error updating credit status", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Success", description: `Credit marked as ${newStatus}.` });
+      fetchData(); // This will refresh both credits and vendor balances
+    }
+  };
+
+  const updateCredit = async () => {
+    if (creditAmount <= 0 || !selectedCreditVendor || !editingCredit) {
+      toast({ title: "Error", description: "Please enter valid data.", variant: "destructive" });
+      return;
+    }
+    setIsSubmitting(true);
+    const { error } = await supabase
+      .from('credit')
+      .update({
+        vendor_id: selectedCreditVendor,
+        amount: creditAmount,
+        date: creditDate?.toISOString(),
+        comments: creditComments,
+      })
+      .eq('id', editingCredit.id);
+
+    if (error) {
+      toast({ title: "Error updating credit", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Success", description: "Credit updated successfully." });
+      setIsEditCreditDialogOpen(false);
+      setEditingCredit(null);
+      setCreditAmount(0);
+      setSelectedCreditVendor("");
+      setCreditComments("");
+      setCreditDate(new Date());
+      fetchData();
+    }
+    setIsSubmitting(false);
+  };
+
   const getPartyName = (transaction: Transaction) => {
     if (transaction.type === 'revenue') return transaction.customer?.name || 'N/A';
     return transaction.vendor?.name || transaction.expense_categories?.name || 'General Expense';
@@ -210,6 +375,14 @@ export const Payments = () => {
     if (transaction.type === 'revenue') return 'Payment Received';
     return transaction.description || transaction.expense_categories?.name || 'N/A';
   }
+
+  const clearCreditFilters = () => {
+    setCreditStatusFilter("all");
+    setCreditVendorFilter("all");
+    setCreditDateRange(undefined);
+  };
+
+  const hasCreditFilters = creditStatusFilter !== "all" || creditVendorFilter !== "all" || creditDateRange?.from;
 
   return (
     <div className="space-y-6">
@@ -382,10 +555,78 @@ export const Payments = () => {
             </Button>
           </CardContent>
         </Card>
+        
+        {/* Record Credit Card */}
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" />Record Credit</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                    <Label htmlFor="creditAmount">Credit Amount</Label>
+                    <Input type="number" min="0" step="0.01" value={creditAmount} onChange={(e) => setCreditAmount(parseFloat(e.target.value) || 0)} placeholder="0.00" />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="creditDate">Date</Label>
+                    <Popover><PopoverTrigger asChild><Button variant={"outline"} className="w-full justify-start text-left font-normal">{creditDate ? format(creditDate, "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={creditDate} onSelect={setCreditDate} initialFocus /></PopoverContent></Popover>
+                </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="creditVendor">Vendor</Label>
+              <Popover open={creditVendorSearchOpen} onOpenChange={setCreditVendorSearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={creditVendorSearchOpen}
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {selectedCreditVendor
+                        ? vendors.find((vendor) => vendor.id === selectedCreditVendor)?.name
+                        : "Select a vendor"}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[95vw] p-0" side="bottom" align="start" avoidCollisions={true}>
+                  <Command>
+                    <CommandInput placeholder="Search vendors..." className="h-9" />
+                    <CommandList className="max-h-[200px]">
+                      <CommandEmpty>No vendor found.</CommandEmpty>
+                      <CommandGroup>
+                        {vendors.map((vendor) => (
+                          <CommandItem
+                            key={vendor.id}
+                            value={vendor.name}
+                            onSelect={() => {
+                              setSelectedCreditVendor(vendor.id);
+                              setCreditVendorSearchOpen(false);
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Check className={`mr-2 h-4 w-4 ${selectedCreditVendor === vendor.id ? "opacity-100" : "opacity-0"}`} />
+                            <span className="truncate">{vendor.name}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="creditComments">Comments</Label>
+              <Textarea value={creditComments} onChange={(e) => setCreditComments(e.target.value)} placeholder="Add a note..." />
+            </div>
+            <Button onClick={recordCredit} className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? 'Recording...' : 'Record Credit'}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
 
       <Tabs defaultValue="transactions">
-        <TabsList><TabsTrigger value="transactions">Recent Transactions</TabsTrigger><TabsTrigger value="balances">Balances</TabsTrigger></TabsList>
+        <TabsList><TabsTrigger value="transactions">Recent Transactions</TabsTrigger><TabsTrigger value="balances">Balances</TabsTrigger><TabsTrigger value="credits">Credits</TabsTrigger></TabsList>
         <TabsContent value="transactions">
           <Card className="mt-4">
             <CardHeader>
@@ -491,7 +732,7 @@ export const Payments = () => {
             </CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Customer</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{customers.map(c => (<TableRow key={c.id}><TableCell>{c.name}</TableCell><TableCell className="text-right">Rs. {c.outstanding_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
             <Card><CardHeader>
               <div className="flex justify-between items-center">
-                <CardTitle>Vendor Balances</CardTitle>
+                <CardTitle>Vendor Credit Balances</CardTitle>
                 <Button
                   variant="outline"
                   size="sm"
@@ -499,11 +740,11 @@ export const Payments = () => {
                     try {
                       exportToCSV({
                         filename: 'vendor-balances',
-                        headers: ['Vendor Name', 'Outstanding Balance'],
+                        headers: ['Vendor Name', 'Credit Balance'],
                         data: vendors,
                         transformData: (vendor) => ({
                           'Vendor Name': vendor.name,
-                          'Outstanding Balance': formatCurrency(vendor.outstanding_balance || 0)
+                          'Credit Balance': formatCurrency(vendor.credit_balance || 0)
                         })
                       });
                       toast({ title: "Success", description: "Vendor balances exported to CSV successfully" });
@@ -517,10 +758,285 @@ export const Payments = () => {
                   Export CSV
                 </Button>
               </div>
-            </CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{vendors.map(v => (<TableRow key={v.id}><TableCell>{v.name}</TableCell><TableCell className="text-right">Rs. {v.outstanding_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
+            </CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead className="text-right">Credit Balance</TableHead></TableRow></TableHeader><TableBody>{vendors.map(v => (<TableRow key={v.id}><TableCell>{v.name}</TableCell><TableCell className="text-right">Rs. {v.credit_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
           </div>
         </TabsContent>
+        <TabsContent value="credits">
+          <Card className="mt-4">
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Credits</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    try {
+                      exportToCSV({
+                        filename: 'credits',
+                        headers: ['Date', 'Vendor', 'Amount', 'Status', 'Comments'],
+                        data: filteredCredits,
+                        transformData: (credit) => ({
+                          'Date': formatDateTime(credit.date),
+                          'Vendor': credit.customers?.name || 'N/A',
+                          'Amount': formatCurrency(credit.amount),
+                          'Status': credit.status === 'pending' ? 'Pending' : 'Redeemed',
+                          'Comments': credit.comments || ''
+                        })
+                      });
+                      toast({ title: "Success", description: "Credits exported to CSV successfully" });
+                    } catch (error) {
+                      toast({ title: "Error", description: "Failed to export CSV", variant: "destructive" });
+                    }
+                  }}
+                  className="gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export CSV
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Credit Filters */}
+              <div className="flex flex-col sm:flex-row gap-4 mb-4 p-4 border rounded-lg bg-muted/50">
+                <Select value={creditStatusFilter} onValueChange={setCreditStatusFilter}>
+                  <SelectTrigger className="w-full sm:w-[180px]">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="redeemed">Redeemed</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                <Popover open={creditVendorFilterSearchOpen} onOpenChange={setCreditVendorFilterSearchOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" aria-expanded={creditVendorFilterSearchOpen} className="w-full sm:w-[200px] justify-between">
+                      {creditVendorFilter !== "all" ? vendors.find((v) => v.id === creditVendorFilter)?.name : "Select vendor..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[200px] p-0">
+                    <Command>
+                      <CommandInput placeholder="Search vendor..." />
+                      <CommandList>
+                        <CommandEmpty>No vendor found.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem value="all" onSelect={() => {setCreditVendorFilter("all"); setCreditVendorFilterSearchOpen(false);}}>All Vendors</CommandItem>
+                          {vendors.map((v) => (
+                            <CommandItem key={v.id} value={v.name} onSelect={() => {setCreditVendorFilter(v.id); setCreditVendorFilterSearchOpen(false);}}>
+                              {v.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant={"outline"} className="w-full sm:w-auto justify-start text-left font-normal">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {creditDateRange?.from ? (
+                        creditDateRange.to ? (
+                          `${format(creditDateRange.from, "LLL dd, y")} - ${format(creditDateRange.to, "LLL dd, y")}`
+                        ) : (
+                          format(creditDateRange.from, "LLL dd, y")
+                        )
+                      ) : (
+                        <span>Pick date range</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar initialFocus mode="range" defaultMonth={creditDateRange?.from} selected={creditDateRange} onSelect={setCreditDateRange} numberOfMonths={2} />
+                  </PopoverContent>
+                </Popover>
+                
+                <Button 
+                  onClick={clearCreditFilters} 
+                  variant="outline"
+                  disabled={!hasCreditFilters}
+                  className="w-full sm:w-auto"
+                >
+                  Clear Filters
+                </Button>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Comments</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8">
+                          Loading...
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredCredits.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                          {credits.length === 0 ? "No credits found." : "No credits match the current filters."}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredCredits.map((credit) => (
+                        <TableRow key={credit.id}>
+                          <TableCell>{new Date(credit.date).toLocaleDateString()}</TableCell>
+                          <TableCell>{credit.customers?.name || 'N/A'}</TableCell>
+                          <TableCell>₹{credit.amount.toFixed(2)}</TableCell>
+                          <TableCell>
+                            <Badge variant={credit.status === 'redeemed' ? 'default' : 'secondary'}>
+                              {credit.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate">{credit.comments}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openEditCreditDialog(credit)}
+                              >
+                                Edit
+                              </Button>
+                              {credit.status === 'pending' && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => updateCreditStatus(credit.id, 'redeemed')}
+                                >
+                                  Mark Redeemed
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* Edit Credit Dialog */}
+      <Dialog open={isEditCreditDialogOpen} onOpenChange={setIsEditCreditDialogOpen}>
+        <DialogContent className="w-[95vw] max-w-md mx-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Credit</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editCreditAmount">Credit Amount</Label>
+                <Input 
+                  id="editCreditAmount"
+                  type="number" 
+                  min="0" 
+                  step="0.01" 
+                  value={creditAmount} 
+                  onChange={(e) => setCreditAmount(parseFloat(e.target.value) || 0)} 
+                  placeholder="0.00" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editCreditDate">Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant={"outline"} className="w-full justify-start text-left font-normal">
+                      {creditDate ? format(creditDate, "PPP") : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar mode="single" selected={creditDate} onSelect={setCreditDate} initialFocus />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editCreditVendor">Vendor</Label>
+              <Popover open={creditVendorSearchOpen} onOpenChange={setCreditVendorSearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={creditVendorSearchOpen}
+                    className="w-full justify-between"
+                  >
+                    <span className="truncate">
+                      {selectedCreditVendor
+                        ? vendors.find((vendor) => vendor.id === selectedCreditVendor)?.name
+                        : "Select a vendor"}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[95vw] p-0" side="bottom" align="start" avoidCollisions={true}>
+                  <Command>
+                    <CommandInput placeholder="Search vendors..." className="h-9" />
+                    <CommandList className="max-h-[200px]">
+                      <CommandEmpty>No vendor found.</CommandEmpty>
+                      <CommandGroup>
+                        {vendors.map((vendor) => (
+                          <CommandItem
+                            key={vendor.id}
+                            value={vendor.name}
+                            onSelect={() => {
+                              setSelectedCreditVendor(vendor.id);
+                              setCreditVendorSearchOpen(false);
+                            }}
+                            className="cursor-pointer"
+                          >
+                            <Check className={`mr-2 h-4 w-4 ${selectedCreditVendor === vendor.id ? "opacity-100" : "opacity-0"}`} />
+                            <span className="truncate">{vendor.name}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editCreditComments">Comments</Label>
+              <Textarea 
+                id="editCreditComments"
+                value={creditComments} 
+                onChange={(e) => setCreditComments(e.target.value)} 
+                placeholder="Add a note..." 
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsEditCreditDialogOpen(false)}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={updateCredit} 
+              disabled={isSubmitting}
+              className="w-full sm:w-auto"
+            >
+              {isSubmitting ? 'Updating...' : 'Update Credit'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
