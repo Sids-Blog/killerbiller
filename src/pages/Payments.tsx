@@ -22,7 +22,7 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
-import { CreditCard, ArrowDownCircle, CalendarIcon, ChevronsUpDown, Check } from "lucide-react";
+import { CreditCard, ArrowDownCircle, CalendarIcon, ChevronsUpDown, Check, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -30,6 +30,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Calendar } from "@/components/ui/calendar";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { DateRange } from "react-day-picker";
+import { exportToCSV, formatCurrency, formatDateTime } from "@/lib/csv-export";
 
 // Interfaces
 interface Bill {
@@ -387,7 +388,38 @@ export const Payments = () => {
         <TabsList><TabsTrigger value="transactions">Recent Transactions</TabsTrigger><TabsTrigger value="balances">Balances</TabsTrigger></TabsList>
         <TabsContent value="transactions">
           <Card className="mt-4">
-            <CardHeader><CardTitle>Recent Transactions</CardTitle></CardHeader>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Recent Transactions</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    try {
+                      exportToCSV({
+                        filename: 'recent-transactions',
+                        headers: ['Date', 'Type', 'Party', 'Amount', 'Details'],
+                        data: transactions,
+                        transformData: (transaction) => ({
+                          'Date': formatDateTime(transaction.date_of_transaction),
+                          'Type': transaction.type === 'revenue' ? 'Revenue' : 'Expense',
+                          'Party': getPartyName(transaction),
+                          'Amount': formatCurrency(transaction.amount),
+                          'Details': getDetails(transaction)
+                        })
+                      });
+                      toast({ title: "Success", description: "Transactions exported to CSV successfully" });
+                    } catch (error) {
+                      toast({ title: "Error", description: "Failed to export CSV", variant: "destructive" });
+                    }
+                  }}
+                  className="gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export CSV
+                </Button>
+              </div>
+            </CardHeader>
             <CardContent>
               <div className="flex flex-col sm:flex-row gap-4 mb-4">
                 <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="Filter by type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="revenue">Revenue</SelectItem><SelectItem value="expense">Expense</SelectItem></SelectContent></Select>
@@ -428,8 +460,64 @@ export const Payments = () => {
         </TabsContent>
         <TabsContent value="balances">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-            <Card><CardHeader><CardTitle>Customer Balances</CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Customer</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{customers.map(c => (<TableRow key={c.id}><TableCell>{c.name}</TableCell><TableCell className="text-right">Rs. {c.outstanding_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
-            <Card><CardHeader><CardTitle>Vendor Balances</CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{vendors.map(v => (<TableRow key={v.id}><TableCell>{v.name}</TableCell><TableCell className="text-right">Rs. {v.outstanding_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
+            <Card><CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Customer Balances</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    try {
+                      exportToCSV({
+                        filename: 'customer-balances',
+                        headers: ['Customer Name', 'Outstanding Balance'],
+                        data: customers,
+                        transformData: (customer) => ({
+                          'Customer Name': customer.name,
+                          'Outstanding Balance': formatCurrency(customer.outstanding_balance || 0)
+                        })
+                      });
+                      toast({ title: "Success", description: "Customer balances exported to CSV successfully" });
+                    } catch (error) {
+                      toast({ title: "Error", description: "Failed to export CSV", variant: "destructive" });
+                    }
+                  }}
+                  className="gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export CSV
+                </Button>
+              </div>
+            </CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Customer</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{customers.map(c => (<TableRow key={c.id}><TableCell>{c.name}</TableCell><TableCell className="text-right">Rs. {c.outstanding_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
+            <Card><CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Vendor Balances</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    try {
+                      exportToCSV({
+                        filename: 'vendor-balances',
+                        headers: ['Vendor Name', 'Outstanding Balance'],
+                        data: vendors,
+                        transformData: (vendor) => ({
+                          'Vendor Name': vendor.name,
+                          'Outstanding Balance': formatCurrency(vendor.outstanding_balance || 0)
+                        })
+                      });
+                      toast({ title: "Success", description: "Vendor balances exported to CSV successfully" });
+                    } catch (error) {
+                      toast({ title: "Error", description: "Failed to export CSV", variant: "destructive" });
+                    }
+                  }}
+                  className="gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export CSV
+                </Button>
+              </div>
+            </CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{vendors.map(v => (<TableRow key={v.id}><TableCell>{v.name}</TableCell><TableCell className="text-right">Rs. {v.outstanding_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
           </div>
         </TabsContent>
       </Tabs>

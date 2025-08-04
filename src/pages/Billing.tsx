@@ -56,6 +56,7 @@ import html2pdf from "html2pdf.js";
 import InvoiceTemplate from "@/components/templates/InvoiceTemplate";
 import { createRoot } from "react-dom/client";
 import { Customer } from "./Customers";
+import { exportToCSV, formatCurrency, formatDate } from "@/lib/csv-export";
 
 // Interfaces
 export interface BillItem {
@@ -928,6 +929,22 @@ export const Billing = () => {
                   </div>
                 </div>
 
+                {/* Customer Comments Display */}
+                {selectedCustomer && (() => {
+                  const customer = customers.find(c => c.id === selectedCustomer);
+                  return customer?.comments ? (
+                    <div className="space-y-2">
+                      <Label>Customer Comments</Label>
+                      <Input
+                        value={customer.comments}
+                        disabled
+                        className="bg-muted cursor-not-allowed text-muted-foreground"
+                        placeholder="No comments available"
+                      />
+                    </div>
+                  ) : null;
+                })()}
+
                 <div className="space-y-2">
                   <Label>Add Products</Label>
                   <div className="flex flex-col sm:flex-row gap-2">
@@ -1020,7 +1037,7 @@ export const Billing = () => {
                       <CardContent className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <Label>Lots</Label>
+                            <Label>Case</Label>
                             <Input
                               type="number"
                               value={item.lots}
@@ -1086,7 +1103,7 @@ export const Billing = () => {
                             <TableHead className="min-w-[150px]">
                               Product
                             </TableHead>
-                            <TableHead>Lots</TableHead>
+                            <TableHead>Case</TableHead>
                             <TableHead>Quantity</TableHead>
                             <TableHead>Price/Unit</TableHead>
                             <TableHead>Price/Lot</TableHead>
@@ -1279,7 +1296,38 @@ export const Billing = () => {
           <TabsContent value="all-bills">
             <Card>
               <CardHeader>
-                <CardTitle>All Bills</CardTitle>
+                <div className="flex justify-between items-center">
+                  <CardTitle>All Bills</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      try {
+                        exportToCSV({
+                          filename: 'all-bills',
+                          headers: ['Bill ID', 'Customer', 'Date', 'Amount', 'Status', 'GST Bill', 'Created At'],
+                          data: filteredBills,
+                          transformData: (bill) => ({
+                            'Bill ID': bill.id,
+                            'Customer': bill.customers?.name || 'N/A',
+                            'Date': formatDate(bill.date_of_bill),
+                            'Amount': formatCurrency(bill.total_amount),
+                            'Status': bill.status,
+                            'GST Bill': bill.is_gst_bill ? 'Yes' : 'No',
+                            'Created At': formatDate(bill.created_at)
+                          })
+                        });
+                        toast({ title: "Success", description: "Bills exported to CSV successfully" });
+                      } catch (error) {
+                        toast({ title: "Error", description: "Failed to export CSV", variant: "destructive" });
+                      }
+                    }}
+                    className="gap-2"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export CSV
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-col sm:flex-row gap-2">

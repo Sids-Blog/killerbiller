@@ -34,8 +34,9 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { Plus, Edit, Filter, X } from "lucide-react";
+import { Plus, Edit, Filter, X, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { exportToCSV } from "@/lib/csv-export";
 
 export interface Customer {
   id: string;
@@ -235,13 +236,45 @@ export const Customers = () => {
             Manage your customer information
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => openDialog()}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Customer
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              try {
+                exportToCSV({
+                  filename: 'customers',
+                  headers: ['Name', 'Type', 'Phone', 'Address', 'GST Number', 'Manager Name', 'Manager Phone', 'Comments', 'Status'],
+                  data: filteredCustomers,
+                  transformData: (customer) => ({
+                    'Name': customer.name,
+                    'Type': customer.type === 'customer' ? 'Customer' : 'Vendor',
+                    'Phone': customer.primary_phone_number || '',
+                    'Address': customer.address || '',
+                    'GST Number': customer.gst_number || '',
+                    'Manager Name': customer.manager_name || '',
+                    'Manager Phone': customer.manager_phone_number || '',
+                    'Comments': customer.comments || '',
+                    'Status': customer.is_active ? 'Active' : 'Inactive'
+                  })
+                });
+                toast({ title: "Success", description: "Customers exported to CSV successfully" });
+              } catch (error) {
+                toast({ title: "Error", description: "Failed to export CSV", variant: "destructive" });
+              }
+            }}
+            className="gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Export CSV
+          </Button>
+          </div>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => openDialog()}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Customer
+              </Button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
               <DialogTitle>

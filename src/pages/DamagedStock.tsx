@@ -27,7 +27,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { Plus, Calendar as CalendarIcon, Filter, X, Edit, Check, ChevronsUpDown } from "lucide-react";
+import { Plus, Calendar as CalendarIcon, Filter, X, Edit, Check, ChevronsUpDown, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -42,6 +42,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { exportToCSV, formatCurrency, formatDateTime } from "@/lib/csv-export";
 
 interface Product {
   id: string;
@@ -427,16 +428,47 @@ export const DamagedStock = () => {
           </p>
         </div>
         
-        {/* Add New Dialog */}
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="w-full sm:w-auto">
-              <Plus className="h-4 w-4 mr-2" />
-              <span className="hidden sm:inline">Log Damaged Stock</span>
-              <span className="sm:hidden">Log Damage</span>
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="w-[95vw] max-w-md mx-auto">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button
+            variant="outline"
+            onClick={() => {
+              try {
+                exportToCSV({
+                  filename: 'damaged-stock-log',
+                  headers: ['Date', 'Product', 'Vendor', 'Quantity', 'Unit Cost', 'Total Value', 'Reason', 'Status'],
+                  data: filteredLogs,
+                  transformData: (log) => ({
+                    'Date': formatDateTime(log.created_at),
+                    'Product': log.products?.name || 'N/A',
+                    'Vendor': log.customers?.name || 'N/A',
+                    'Quantity': log.quantity.toString(),
+                    'Unit Cost': formatCurrency(log.unit_cost),
+                    'Total Value': formatCurrency(log.total_value),
+                    'Reason': log.reason,
+                    'Status': log.status === 'ADJUSTED' ? 'Adjusted' : 'Pending Adjustment'
+                  })
+                });
+                toast({ title: "Success", description: "Damaged stock log exported to CSV successfully" });
+              } catch (error) {
+                toast({ title: "Error", description: "Failed to export CSV", variant: "destructive" });
+              }
+            }}
+            className="gap-2"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Export CSV</span>
+            <span className="sm:hidden">Export</span>
+          </Button>
+          
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                <span className="hidden sm:inline">Log Damaged Stock</span>
+                <span className="sm:hidden">Log Damage</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="w-[95vw] max-w-md mx-auto">
             <DialogHeader>
               <DialogTitle className="text-lg">Log New Damaged Stock</DialogTitle>
             </DialogHeader>
@@ -669,6 +701,7 @@ export const DamagedStock = () => {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Filters */}

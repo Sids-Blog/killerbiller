@@ -14,7 +14,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Package, AlertTriangle, ChevronsUpDown, Check } from "lucide-react";
+import { Plus, Package, AlertTriangle, ChevronsUpDown, Check, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -22,6 +22,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Calendar } from "@/components/ui/calendar";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import { DateRange } from "react-day-picker";
+import { exportToCSV, formatCurrency } from "@/lib/csv-export";
 
 interface InventoryItem {
   id: string;
@@ -336,7 +337,41 @@ export const Inventory = () => {
         </TabsContent>
         <TabsContent value="current-inventory">
           <Card className="mt-4">
-            <CardHeader><CardTitle>Current Inventory</CardTitle></CardHeader>
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle>Current Inventory</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    try {
+                      exportToCSV({
+                        filename: 'current-inventory',
+                        headers: ['Product Name', 'Current Stock', 'Minimum Stock', 'Price', 'Stock Status'],
+                        data: inventory,
+                        transformData: (item) => {
+                          const stockStatus = item.current_stock === 0 ? 'Out of Stock' : item.current_stock <= item.min_stock ? 'Low Stock' : 'In Stock';
+                          return {
+                            'Product Name': item.name,
+                            'Current Stock': item.current_stock.toString(),
+                            'Minimum Stock': item.min_stock.toString(),
+                            'Price': formatCurrency(item.price),
+                            'Stock Status': stockStatus
+                          };
+                        }
+                      });
+                      toast({ title: "Success", description: "Inventory exported to CSV successfully" });
+                    } catch (error) {
+                      toast({ title: "Error", description: "Failed to export CSV", variant: "destructive" });
+                    }
+                  }}
+                  className="gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Export CSV
+                </Button>
+              </div>
+            </CardHeader>
             <CardContent>
               {loading ? (<p>Loading inventory...</p>) : (
                 <div className="space-y-3">

@@ -22,7 +22,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Trash2, Plus, FileText, Edit } from "lucide-react";
+import { Trash2, Plus, FileText, Edit, ChevronsUpDown, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import {
@@ -89,6 +89,8 @@ export const Orders = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [customerFilter, setCustomerFilter] = useState("all");
   const [customerSearchOpen, setCustomerSearchOpen] = useState(false);
+  const [createOrderCustomerSearchOpen, setCreateOrderCustomerSearchOpen] = useState(false);
+  const [productSearchOpen, setProductSearchOpen] = useState(false);
 
 
   // Edit Modal states
@@ -323,43 +325,100 @@ export const Orders = () => {
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="customer">Customer</Label>
-                  <Select
-                    value={selectedCustomer}
-                    onValueChange={setSelectedCustomer}
-                    disabled={loading}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select customer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customers.map((customer) => (
-                        <SelectItem key={customer.id} value={customer.id}>
-                          {customer.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={createOrderCustomerSearchOpen} onOpenChange={setCreateOrderCustomerSearchOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={createOrderCustomerSearchOpen}
+                        className="w-full justify-between"
+                        disabled={loading}
+                      >
+                        <span className="truncate">
+                          {selectedCustomer
+                            ? customers.find((customer) => customer.id === selectedCustomer)?.name
+                            : "Select customer"}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[95vw] p-0" side="bottom" align="start" avoidCollisions={true}>
+                      <Command>
+                        <CommandInput placeholder="Search customers..." className="h-9" />
+                        <CommandList className="max-h-[200px]">
+                          <CommandEmpty>No customer found.</CommandEmpty>
+                          <CommandGroup>
+                            {customers.map((customer) => (
+                              <CommandItem
+                                key={customer.id}
+                                value={customer.name}
+                                onSelect={() => {
+                                  setSelectedCustomer(customer.id);
+                                  setCreateOrderCustomerSearchOpen(false);
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <Check className={`mr-2 h-4 w-4 ${selectedCustomer === customer.id ? "opacity-100" : "opacity-0"}`} />
+                                <span className="truncate">{customer.name}</span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="flex items-end gap-2">
                   <div className="flex-1 space-y-2">
                     <Label htmlFor="product">Product</Label>
-                    <Select
-                      value={selectedProduct}
-                      onValueChange={setSelectedProduct}
-                      disabled={loading}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select product to add" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {products.map((product) => (
-                          <SelectItem key={product.id} value={product.id}>
-                            {product.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover open={productSearchOpen} onOpenChange={setProductSearchOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={productSearchOpen}
+                          className="w-full justify-between"
+                          disabled={loading}
+                        >
+                          <span className="truncate">
+                            {selectedProduct
+                              ? products.find((product) => product.id === selectedProduct)?.name
+                              : "Select product to add"}
+                          </span>
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] max-w-[95vw] p-0" side="bottom" align="start" avoidCollisions={true}>
+                        <Command>
+                          <CommandInput placeholder="Search products..." className="h-9" />
+                          <CommandList className="max-h-[200px]">
+                            <CommandEmpty>No product found.</CommandEmpty>
+                            <CommandGroup>
+                              {products.map((product) => (
+                                <CommandItem
+                                  key={product.id}
+                                  value={product.name}
+                                  onSelect={() => {
+                                    setSelectedProduct(product.id);
+                                    setProductSearchOpen(false);
+                                  }}
+                                  className="cursor-pointer"
+                                >
+                                  <Check className={`mr-2 h-4 w-4 ${selectedProduct === product.id ? "opacity-100" : "opacity-0"}`} />
+                                  <div className="flex flex-col">
+                                    <span className="truncate">{product.name}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      Stock: {product.inventory?.quantity || 0} units
+                                    </span>
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <Button onClick={addItem} size="icon">
                     <Plus className="h-4 w-4" />
@@ -398,7 +457,7 @@ export const Orders = () => {
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <div className="space-y-1">
-                            <Label className="text-xs">Lots</Label>
+                            <Label className="text-xs">Case</Label>
                             <Input
                               type="text"
                               value={item.lots}
@@ -586,7 +645,7 @@ export const Orders = () => {
                     type="text"
                     value={item.lots}
                     onChange={(e) => handleEditItemChange(index, "lots", e.target.value)}
-                    placeholder="Lots"
+                    placeholder="Case"
                     />
                     <Input
                     type="number"

@@ -269,7 +269,7 @@ export const Dashboard = () => {
                     <Badge variant={status === 'default' ? 'outline' : status === 'warning' ? 'secondary' : 'destructive'}>{quantity} units</Badge>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Lots:</span>
+                    <span className="text-muted-foreground">Case:</span>
                     <span className="font-semibold">{lots}</span>
                   </div>
                   <div className="flex justify-between items-center">
