@@ -11,7 +11,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Edit, Trash2, Plus, Building } from "lucide-react";
+import { Edit, Trash2, Plus, Building, Download } from "lucide-react";
+import * as XLSX from 'exceljs';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { Products } from "./Products"; // Import the Products component
@@ -550,6 +551,288 @@ const SellerInfoManager = () => {
   );
 };
 
+const DatabaseExportManager = () => {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+
+  const exportToSQL = async () => {
+    setLoading(true);
+    try {
+      let sqlContent = `-- Database Backup Export
+-- Generated on: ${new Date().toISOString()}
+-- 
+-- WARNING: This file contains all data from your database.
+-- Review before executing in production.
+
+SET session_replication_role = replica;
+
+`;
+
+      // Define all tables to export (in order to respect foreign key constraints)
+      const tables = [
+        'roles',
+        'users',
+        'user_roles',
+        'expense_categories',
+        'seller_info',
+        'customers',
+        'products',
+        'inventory',
+        'bills',
+        'bill_items',
+        'orders',
+        'order_items',
+        'inventory_transactions',
+        'transactions',
+        'damaged_stock_log',
+        'credit'
+      ];
+
+      // Export each table
+      for (const tableName of tables) {
+        try {
+          const { data, error } = await supabase.from(tableName).select('*');
+          
+          if (error) {
+            console.warn(`Failed to export table ${tableName}:`, error.message);
+            continue;
+          }
+
+          if (data && data.length > 0) {
+            sqlContent += `-- Table: ${tableName}\n`;
+            sqlContent += `DELETE FROM ${tableName};\n`;
+            
+            for (const row of data) {
+              const columns = Object.keys(row);
+              const values = columns.map(col => {
+                const value = row[col];
+                if (value === null || value === undefined) return 'NULL';
+                if (typeof value === 'string') {
+                  // Escape single quotes in strings
+                  return `'${value.replace(/'/g, "''")}'`;
+                }
+                if (typeof value === 'boolean') return value ? 'true' : 'false';
+                if (typeof value === 'object') {
+                  // Handle JSON objects/arrays
+                  return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
+                }
+                if (value instanceof Date) {
+                  return `'${value.toISOString()}'`;
+                }
+                return value;
+              });
+              
+              sqlContent += `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${values.join(', ')});\n`;
+            }
+            sqlContent += '\n';
+          }
+        } catch (tableError) {
+          console.warn(`Error processing table ${tableName}:`, tableError);
+          sqlContent += `-- Error exporting table ${tableName}: ${tableError}\n\n`;
+          continue;
+        }
+      }
+
+      sqlContent += `SET session_replication_role = DEFAULT;\n`;
+      sqlContent += `-- End of backup\n`;
+
+      // Create and download the SQL file
+      const blob = new Blob([sqlContent], { type: 'text/plain;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Generate filename with current date
+      const today = new Date().toISOString().split('T')[0];
+      link.download = `database_backup_${today}.sql`;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "SQL Backup Created",
+        description: "Database backup SQL file has been downloaded.",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error('SQL Export error:', error);
+      toast({
+        title: "SQL Export Failed",
+        description: "Failed to create SQL backup. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const exportDatabase = async () => {
+    setLoading(true);
+    try {
+      // Create a new workbook
+      const workbook = new XLSX.Workbook();
+      
+      // Define all tables to export
+      const tables = [
+        'customers',
+        'products', 
+        'inventory',
+        'bills',
+        'bill_items',
+        'orders',
+        'order_items',
+        'inventory_transactions',
+        'expense_categories',
+        'transactions',
+        'damaged_stock_log',
+        'credit',
+        'seller_info',
+        'roles',
+        'user_roles'
+      ];
+
+      // Export each table as a separate worksheet
+      for (const tableName of tables) {
+        try {
+          const { data, error } = await supabase.from(tableName).select('*');
+          
+          if (error) {
+            console.warn(`Failed to export table ${tableName}:`, error.message);
+            continue;
+          }
+
+          if (data && data.length > 0) {
+            // Create worksheet
+            const worksheet = workbook.addWorksheet(tableName);
+            
+            // Get column headers from the first row
+            const headers = Object.keys(data[0]);
+            
+            // Add headers
+            worksheet.addRow(headers);
+            
+            // Add data rows
+            data.forEach(row => {
+              const values = headers.map(header => {
+                const value = row[header];
+                // Handle different data types
+                if (value === null || value === undefined) return '';
+                if (typeof value === 'object') return JSON.stringify(value);
+                return value;
+              });
+              worksheet.addRow(values);
+            });
+            
+            // Style the header row
+            const headerRow = worksheet.getRow(1);
+            headerRow.font = { bold: true };
+            headerRow.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFE6E6FA' }
+            };
+            
+            // Auto-fit columns
+            worksheet.columns.forEach(column => {
+              column.width = 15;
+            });
+          }
+        } catch (tableError) {
+          console.warn(`Error processing table ${tableName}:`, tableError);
+          continue;
+        }
+      }
+
+      // Generate Excel file
+      const buffer = await workbook.xlsx.writeBuffer();
+      
+      // Create download link
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Generate filename with current date
+      const today = new Date().toISOString().split('T')[0];
+      link.download = `database_export_${today}.xlsx`;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Export Successful",
+        description: "Database has been exported successfully.",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast({
+        title: "Export Failed",
+        description: "Failed to export database. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
+        <p className="text-muted-foreground text-sm sm:text-base">
+          Export all database tables to an Excel file for backup or analysis.
+        </p>
+      </div>
+      
+      <Card>
+        <CardHeader className="pb-3 sm:pb-6">
+          <CardTitle className="text-lg sm:text-xl">Database Export</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <Building className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-sm text-muted-foreground mb-6">
+              Choose your preferred backup format for the complete database.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Button 
+                onClick={exportDatabase} 
+                disabled={loading}
+                className="gap-2"
+                variant="default"
+              >
+                <Download className="h-4 w-4" />
+                {loading ? "Exporting..." : "Export as Excel"}
+              </Button>
+              <Button 
+                onClick={exportToSQL} 
+                disabled={loading}
+                className="gap-2"
+                variant="outline"
+              >
+                <Download className="h-4 w-4" />
+                {loading ? "Exporting..." : "Export as SQL"}
+              </Button>
+            </div>
+            <div className="mt-4 text-xs text-muted-foreground">
+              <p><strong>Excel:</strong> Ideal for data analysis and viewing</p>
+              <p><strong>SQL:</strong> Perfect for database backup and restoration</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
 export const Admin = () => {
   // The ProtectedRoute component already ensures that only admins can access this page.
   // No need for a separate loading or access check here.
@@ -564,7 +847,7 @@ export const Admin = () => {
       </div>
       
       <Tabs defaultValue="products" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 h-auto p-1">
+        <TabsList className="grid w-full grid-cols-5 h-auto p-1">
           <TabsTrigger
             value="products"
             className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
@@ -593,6 +876,13 @@ export const Admin = () => {
             <span className="hidden sm:inline">User Management</span>
             <span className="sm:hidden">Users</span>
           </TabsTrigger>
+          <TabsTrigger
+            value="export"
+            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+          >
+            <span className="hidden sm:inline">Export</span>
+            <span className="sm:hidden">Export</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="products" className="mt-4 sm:mt-6">
@@ -606,6 +896,9 @@ export const Admin = () => {
         </TabsContent>
         <TabsContent value="user-management" className="mt-4 sm:mt-6">
           <UserManagement />
+        </TabsContent>
+        <TabsContent value="export" className="mt-4 sm:mt-6">
+          <DatabaseExportManager />
         </TabsContent>
       </Tabs>
     </div>

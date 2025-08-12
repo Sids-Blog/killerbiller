@@ -556,12 +556,12 @@ export const Billing = () => {
             allowTaint: false,
             backgroundColor: "#ffffff",
             logging: false,
-            width: content.offsetWidth,
-            height: content.offsetHeight,
+            width: 794, // Fixed A4 width in pixels (210mm at 96 DPI)
+            height: 1123, // Fixed A4 height in pixels (297mm at 96 DPI)
             scrollX: 0,
             scrollY: 0,
-            windowWidth: content.offsetWidth,
-            windowHeight: content.offsetHeight,
+            windowWidth: 794,
+            windowHeight: 1123,
           },
           jsPDF: {
             unit: "mm",
@@ -571,8 +571,29 @@ export const Billing = () => {
           },
         };
 
+        // Temporarily remove mobile scaling for PDF generation
+        const originalTransform = content.style.transform;
+        const originalWidth = content.style.width;
+        const originalMinWidth = content.style.minWidth;
+        const originalMaxWidth = content.style.maxWidth;
+        const originalPadding = content.style.padding;
+        
+        // Force desktop dimensions temporarily
+        content.style.transform = 'none';
+        content.style.width = '210mm';
+        content.style.minWidth = '210mm';
+        content.style.maxWidth = '210mm';
+        content.style.padding = '0';
+        
         // Generate PDF from the visible modal content
         await html2pdf().from(content).set(pdfOptions).save();
+        
+        // Restore original mobile styling
+        content.style.transform = originalTransform;
+        content.style.width = originalWidth;
+        content.style.minWidth = originalMinWidth;
+        content.style.maxWidth = originalMaxWidth;
+        content.style.padding = originalPadding;
 
         toast({
           title: "PDF Downloaded Successfully",
@@ -777,12 +798,12 @@ export const Billing = () => {
             allowTaint: false,
             backgroundColor: "#ffffff",
             logging: false,
-            width: content.offsetWidth,
-            height: content.offsetHeight,
+            width: 794, // Fixed A4 width in pixels (210mm at 96 DPI)
+            height: 1123, // Fixed A4 height in pixels (297mm at 96 DPI)
             scrollX: 0,
             scrollY: 0,
-            windowWidth: content.offsetWidth,
-            windowHeight: content.offsetHeight,
+            windowWidth: 794,
+            windowHeight: 1123,
           },
           jsPDF: {
             unit: "mm",
@@ -792,8 +813,29 @@ export const Billing = () => {
           },
         };
 
+        // Temporarily remove mobile scaling for PDF generation
+        const originalTransform = content.style.transform;
+        const originalWidth = content.style.width;
+        const originalMinWidth = content.style.minWidth;
+        const originalMaxWidth = content.style.maxWidth;
+        const originalPadding = content.style.padding;
+        
+        // Force desktop dimensions temporarily
+        content.style.transform = 'none';
+        content.style.width = '210mm';
+        content.style.minWidth = '210mm';
+        content.style.maxWidth = '210mm';
+        content.style.padding = '0';
+        
         // Generate PDF from the visible modal content
         await html2pdf().from(content).set(pdfOptions).save();
+        
+        // Restore original mobile styling
+        content.style.transform = originalTransform;
+        content.style.width = originalWidth;
+        content.style.minWidth = originalMinWidth;
+        content.style.maxWidth = originalMaxWidth;
+        content.style.padding = originalPadding;
 
         toast({
           title: "Receipt Downloaded Successfully",
