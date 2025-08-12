@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS customers (
   type TEXT NOT NULL DEFAULT 'customer' CHECK (type IN ('vendor', 'customer')),
   is_active BOOLEAN DEFAULT true,
   outstanding_balance NUMERIC(10, 2) DEFAULT 0.00,
+  is_cooler BOOLEAN DEFAULT false,
+  is_cooler_details TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -148,6 +150,27 @@ CREATE TABLE IF NOT EXISTS credit (
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'redeemed')),
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Create Seller Information table (single row design)
+CREATE TABLE IF NOT EXISTS seller_info (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  contact_number TEXT NOT NULL,
+  address TEXT,
+  gst_number TEXT,
+  bank_account_number TEXT,
+  account_holder_name TEXT,
+  account_no TEXT,
+  branch TEXT,
+  ifsc_code TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT single_seller_info CHECK (id = id) -- Enforces single row when combined with unique constraint
+);
+
+-- Add a unique constraint to ensure only one row exists
+CREATE UNIQUE INDEX IF NOT EXISTS single_seller_info_idx ON seller_info ((true));
 
 -- Create Roles table
 CREATE TABLE public.roles (
@@ -538,6 +561,7 @@ ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credit ENABLE ROW LEVEL SECURITY;
+ALTER TABLE seller_info ENABLE ROW LEVEL SECURITY;
 
 
 -- Note: These are placeholder policies. Adapt them to your authentication setup.
@@ -571,6 +595,8 @@ DROP POLICY IF EXISTS "Allow all access to all users" ON public.users;
 CREATE POLICY "Allow all access to all users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Allow all access to all users" ON credit;
 CREATE POLICY "Allow all access to all users" ON credit FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON seller_info;
+CREATE POLICY "Allow all access to all users" ON seller_info FOR ALL USING (true) WITH CHECK (true);
 
 
 -- === INDEXES for Performance ===
@@ -586,6 +612,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
 CREATE INDEX IF NOT EXISTS idx_transactions_vendor_id ON transactions(vendor_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_category_id ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_customer_id ON transactions(customer_id);
+CREATE INDEX IF NOT EXISTS idx_seller_info_company_name ON seller_info(company_name);
 
 
 -- === TRIGGERS ===
@@ -639,3 +666,18 @@ CREATE TRIGGER trigger_update_inventory_timestamp
 BEFORE UPDATE ON inventory
 FOR EACH ROW
 EXECUTE FUNCTION update_inventory_timestamp();
+
+-- Trigger to automatically update the 'updated_at' timestamp in the seller_info table
+CREATE OR REPLACE FUNCTION update_seller_info_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_seller_info_timestamp ON seller_info;
+CREATE TRIGGER trigger_update_seller_info_timestamp
+BEFORE UPDATE ON seller_info
+FOR EACH ROW
+EXECUTE FUNCTION update_seller_info_timestamp();

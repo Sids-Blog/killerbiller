@@ -90,6 +90,20 @@ interface Bill {
   customers: { name: string } | null;
 }
 
+interface SellerInfo {
+  id: string;
+  company_name: string;
+  email: string;
+  contact_number: string;
+  address?: string;
+  gst_number?: string;
+  bank_account_number?: string;
+  account_holder_name?: string;
+  account_no?: string;
+  branch?: string;
+  ifsc_code?: string;
+}
+
 export const Billing = () => {
   const { toast } = useToast();
   const location = useLocation();
@@ -112,6 +126,7 @@ export const Billing = () => {
   // Shared states
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [sellerInfo, setSellerInfo] = useState<SellerInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
   // All Bills states
@@ -167,11 +182,17 @@ export const Billing = () => {
         "id, invoice_number, created_at, date_of_bill, total_amount, status, is_gst_bill, customers ( name )"
       )
       .order("date_of_bill", { ascending: false });
+    const sellerInfoPromise = supabase
+      .from("seller_info")
+      .select("*")
+      .limit(1)
+      .maybeSingle();
 
-    const [customerRes, productRes, billsRes] = await Promise.all([
+    const [customerRes, productRes, billsRes, sellerInfoRes] = await Promise.all([
       customerPromise,
       productPromise,
       billsPromise,
+      sellerInfoPromise,
     ]);
 
     if (customerRes.error)
@@ -206,6 +227,14 @@ export const Billing = () => {
       setBills(transformedData as unknown as Bill[]);
       setFilteredBills(transformedData as unknown as Bill[]);
     }
+
+    if (sellerInfoRes.error)
+      toast({
+        title: "Error fetching seller info",
+        description: sellerInfoRes.error.message,
+        variant: "destructive",
+      });
+    else setSellerInfo(sellerInfoRes.data);
 
     setLoading(false);
   }, [toast]);
@@ -550,12 +579,12 @@ export const Billing = () => {
           description: "Your invoice has been downloaded.",
           variant: "default",
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("PDF generation error:", error);
         toast({
           title: "PDF Generation Failed",
           description:
-            error.message ||
+            error instanceof Error ? error.message : 
             "There was an error generating the PDF. Please try again.",
           variant: "destructive",
         });
@@ -597,6 +626,7 @@ export const Billing = () => {
           billDetails={billDetails}
           items={items}
           customerDetails={customerDetails}
+          sellerInfo={sellerInfo}
         />
       </div>
     );
@@ -770,12 +800,12 @@ export const Billing = () => {
           description: "Your receipt has been downloaded.",
           variant: "default",
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("PDF generation error:", error);
         toast({
           title: "PDF Generation Failed",
           description:
-            error.message ||
+            error instanceof Error ? error.message : 
             "There was an error generating the PDF. Please try again.",
           variant: "destructive",
         });
@@ -816,6 +846,7 @@ export const Billing = () => {
           billDetails={billDetails}
           items={items}
           customerDetails={customerDetails}
+          sellerInfo={sellerInfo}
         />
       </div>
     );

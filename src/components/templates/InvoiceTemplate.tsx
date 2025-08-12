@@ -19,6 +19,20 @@ interface Bill {
   comments?: string;
 }
 
+interface SellerInfo {
+  id: string;
+  company_name: string;
+  email: string;
+  contact_number: string;
+  address?: string;
+  gst_number?: string;
+  bank_account_number?: string;
+  account_holder_name?: string;
+  account_no?: string;
+  branch?: string;
+  ifsc_code?: string;
+}
+
 interface InvoiceTemplateProps {
   billCalculations: {
     sgst: number;
@@ -31,22 +45,34 @@ interface InvoiceTemplateProps {
   billDetails: Bill;
   items: BillItem[];
   customerDetails: Customer;
+  sellerInfo?: SellerInfo;
 }
 
-const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, billDetails, items, customerDetails }) => {
-  // Calculate tax amounts using database values
-  const subtotal = billDetails.total_amount || items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
-  const cgstRate = billDetails.cgst_percentage || 9; // Use DB value or default to 9%
-  const sgstRate = billDetails.sgst_percentage || 9; // Use DB value or default to 9%
-  const cessRate = billDetails.cess_percentage || 0; // Use DB value or default to 0%
+const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, billDetails, items, customerDetails, sellerInfo }) => {
+  // Use the calculations from Billing.tsx for consistency
+  const cgstRate = billDetails.cgst_percentage || 9;
+  const sgstRate = billDetails.sgst_percentage || 9;
+  const cessRate = billDetails.cess_percentage || 0;
+  const discount = billDetails.discount || 0;
   
-  // If it's a GST bill, use the stored GST amount, otherwise calculate
-  const totalTaxAmount = billDetails.is_gst_bill ? (billDetails.gst_amount || 0) : 0;
-  const cgstAmount = billDetails.is_gst_bill ? (subtotal * cgstRate) / 100 : 0;
-  const sgstAmount = billDetails.is_gst_bill ? (subtotal * sgstRate) / 100 : 0;
-  const cessAmount = billDetails.is_gst_bill ? (subtotal * cessRate) / 100 : 0;
-  const discount = billDetails.discount || 0; // Use DB value or default to 0
-  const grandTotal = subtotal + totalTaxAmount - (billDetails.discount || 0);
+  // Fallback calculation if billCalculations values are 0 or undefined
+  const subtotal = billCalculations.subtotal || items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+  const grandTotal = billDetails.total_amount || subtotal;
+  
+  // Calculate tax amounts - use billCalculations if available and non-zero, otherwise calculate
+  let taxableValue = billCalculations.taxableValue;
+  let cgstAmount = billCalculations.cgst;
+  let sgstAmount = billCalculations.sgst;
+  let cessAmount = billCalculations.cess;
+  
+  // If the tax amounts from billCalculations are 0 or undefined, calculate them manually
+  if (billDetails.is_gst_bill && (cgstAmount === 0 || sgstAmount === 0 || !cgstAmount || !sgstAmount)) {
+    const totalGstRate = (cgstRate + sgstRate + cessRate) / 100;
+    taxableValue = subtotal / (1 + totalGstRate);
+    cgstAmount = taxableValue * (cgstRate / 100);
+    sgstAmount = taxableValue * (sgstRate / 100);
+    cessAmount = taxableValue * (cessRate / 100);
+  }
 
   const tableStyle = {
     width: '100%',
@@ -95,13 +121,18 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
           <tr>
             <td style={{ ...cellStyle, width: '60%', verticalAlign: 'top' }}>
               <div style={{ fontWeight: 'bold', fontSize: '12px', marginBottom: '5px' }}>
-                YOUR COMPANY NAME
+                {sellerInfo?.company_name || 'YOUR COMPANY NAME'}
               </div>
-              <div>123 Business Street, Business Area</div>
-              <div>CITY - 123456</div>
-              <div>GSTIN/UIN: 29ABCDE1234F1Z5</div>
-              <div>State Name: Your State, Code: 29</div>
-              <div>E-Mail: contact@yourcompany.com</div>
+              {sellerInfo?.address && (
+                <div>{sellerInfo.address}</div>
+              )}
+              {sellerInfo?.gst_number && (
+                <div>GSTIN/UIN: {sellerInfo.gst_number}</div>
+              )}
+              <div>E-Mail: {sellerInfo?.email || 'contact@yourcompany.com'}</div>
+              {sellerInfo?.contact_number && (
+                <div>Contact: {sellerInfo.contact_number}</div>
+              )}
             </td>
             <td style={{ ...cellStyle, width: '40%' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -124,25 +155,9 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
                   </tr>
                   <tr>
                     <td style={{ padding: '2px', fontWeight: 'bold' }}>Buyer's Order No.</td>
-                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Dated</td>
-                  </tr>
-                  <tr>
                     <td style={{ padding: '2px' }}>-</td>
-                    <td style={{ padding: '2px' }}>{new Date(billDetails.date_of_bill || billDetails.created_at).toLocaleDateString('en-GB')}</td>
                   </tr>
-                  <tr>
-                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Dispatch Doc No.</td>
-                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Delivery Note Date</td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Dispatched through</td>
-                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Destination</td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '2px', fontWeight: 'bold' }}>Terms of Delivery</td>
-                    <td style={{ padding: '2px' }}></td>
-                  </tr>
-                </tbody> {/* ✅ Closing </tbody> */}
+                </tbody>
               </table>
             </td>
           </tr>
@@ -175,44 +190,42 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
       <table style={{ ...tableStyle, marginTop: '2px' }}>
         <thead>
           <tr>
-            <th style={{ ...headerCellStyle, width: '5%' }}>Sl No</th>
-            <th style={{ ...headerCellStyle, width: '15%' }}>Marks & Nos/ Container No</th>
-            <th style={{ ...headerCellStyle, width: '35%' }}>Description of Goods</th>
-            <th style={{ ...headerCellStyle, width: '10%' }}>HSN/SAC</th>
-            <th style={{ ...headerCellStyle, width: '10%' }}>Quantity</th>
-            <th style={{ ...headerCellStyle, width: '8%' }}>Rate</th>
-            <th style={{ ...headerCellStyle, width: '5%' }}>per</th>
+            <th style={{ ...headerCellStyle, width: '8%' }}>Sl No</th>
+            <th style={{ ...headerCellStyle, width: '50%' }}>Description of Goods</th>
+            <th style={{ ...headerCellStyle, width: '12%' }}>Quantity</th>
+            <th style={{ ...headerCellStyle, width: '10%' }}>Rate</th>
+            <th style={{ ...headerCellStyle, width: '8%' }}>per</th>
             <th style={{ ...headerCellStyle, width: '12%' }}>Amount</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((item, index) => (
-            <tr key={item.product_id}>
-              <td style={{ ...cellStyle, textAlign: 'center' }}>{index + 1}</td>
-              <td style={cellStyle}>-</td>
-              <td style={cellStyle}>{item.product_name}</td>
-              <td style={{ ...cellStyle, textAlign: 'center' }}>-</td>
-              <td style={{ ...cellStyle, textAlign: 'center' }}>
-                {item.quantity} Nos.
-              </td>
-              <td style={{ ...cellStyle, textAlign: 'right' }}>{item.price.toFixed(2)}</td>
-              <td style={{ ...cellStyle, textAlign: 'center' }}>Nos.</td>
-              <td style={{ ...cellStyle, textAlign: 'right' }}>{(item.quantity * item.price).toFixed(2)}</td>
-            </tr>
-          ))}
+          {items.map((item, index) => {
+            // Calculate the base price and amount like in Billing.tsx
+            const finalPrice = item.quantity * item.price;
+            const totalGstRate = billDetails.is_gst_bill ? (cgstRate + sgstRate + cessRate) / 100 : 0;
+            const basePrice = billDetails.is_gst_bill ? finalPrice / (1 + totalGstRate) : finalPrice;
+            const unitBasePrice = billDetails.is_gst_bill ? item.price / (1 + totalGstRate) : item.price;
+            
+            return (
+              <tr key={item.product_id}>
+                <td style={{ ...cellStyle, textAlign: 'center' }}>{index + 1}</td>
+                <td style={cellStyle}>{item.product_name}</td>
+                <td style={{ ...cellStyle, textAlign: 'center' }}>
+                  {item.quantity} Nos.
+                </td>
+                <td style={{ ...cellStyle, textAlign: 'right' }}>{unitBasePrice.toFixed(2)}</td>
+                <td style={{ ...cellStyle, textAlign: 'center' }}>Nos.</td>
+                <td style={{ ...cellStyle, textAlign: 'right' }}>{basePrice.toFixed(2)}</td>
+              </tr>
+            );
+          })}
           
           {/* Tax rows - only show if it's a GST bill */}
           {billDetails.is_gst_bill && (
             <>
               <tr>
                 <td style={cellStyle}></td>
-                <td style={cellStyle}></td>
-                <td style={cellStyle}>
-                  <div>OUTPUT CGST @ {cgstRate}%</div>
-                  <div>OUTPUT SGST @ {sgstRate}%</div>
-                  {cessRate > 0 && <div>CESS @ {cessRate}%</div>}
-                </td>
-                <td style={cellStyle}></td>
+                <td style={cellStyle}>OUTPUT CGST @ {cgstRate}%</td>
                 <td style={cellStyle}></td>
                 <td style={{ ...cellStyle, textAlign: 'right' }}>{cgstRate}%</td>
                 <td style={cellStyle}></td>
@@ -220,9 +233,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
               </tr>
               <tr>
                 <td style={cellStyle}></td>
-                <td style={cellStyle}></td>
-                <td style={cellStyle}></td>
-                <td style={cellStyle}></td>
+                <td style={cellStyle}>OUTPUT SGST @ {sgstRate}%</td>
                 <td style={cellStyle}></td>
                 <td style={{ ...cellStyle, textAlign: 'right' }}>{sgstRate}%</td>
                 <td style={cellStyle}></td>
@@ -231,9 +242,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
               {cessRate > 0 && (
                 <tr>
                   <td style={cellStyle}></td>
-                  <td style={cellStyle}></td>
-                  <td style={cellStyle}></td>
-                  <td style={cellStyle}></td>
+                  <td style={cellStyle}>CESS @ {cessRate}%</td>
                   <td style={cellStyle}></td>
                   <td style={{ ...cellStyle, textAlign: 'right' }}>{cessRate}%</td>
                   <td style={cellStyle}></td>
@@ -245,20 +254,20 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
 
           {discount > 0 && (
             <tr>
-              <td style={cellStyle} colSpan={7} align='right'>Discount</td>
+              <td style={cellStyle} colSpan={5} align='right'>Discount</td>
               <td style={{ ...cellStyle, textAlign: 'right' }}>-{discount.toFixed(2)}</td>
             </tr>
           )}
 
           {/* Total row */}
           <tr>
-            <td style={{...cellStyle, fontWeight: 'bold'}} colSpan={4}>Total</td>
+            <td style={{...cellStyle, fontWeight: 'bold'}} colSpan={2}>Total</td>
             <td style={{ ...cellStyle, textAlign: 'center', fontWeight: 'bold' }}>
               {items.reduce((sum, item) => sum + item.quantity, 0)} Nos.
             </td>
             <td style={cellStyle}></td>
             <td style={cellStyle}></td>
-            <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>₹ {(billDetails.total_amount || grandTotal).toFixed(2)}</td>
+            <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>₹ {grandTotal.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
@@ -271,7 +280,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
           </tr>
           <tr>
             <td style={{ ...cellStyle, height: '30px' }}>
-              INR {numberToWords(Math.round(billDetails.total_amount || grandTotal))} Only
+              INR {numberToWords(Math.round(grandTotal))} Only
             </td>
           </tr>
         </tbody>
@@ -303,7 +312,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
           </thead>
           <tbody>
             <tr>
-              <td style={{ ...cellStyle, textAlign: 'right' }}>{subtotal.toFixed(2)}</td>
+              <td style={{ ...cellStyle, textAlign: 'right' }}>{taxableValue.toFixed(2)}</td>
               <td style={{ ...cellStyle, textAlign: 'center' }}>{cgstRate}%</td>
               <td style={{ ...cellStyle, textAlign: 'right' }}>{cgstAmount.toFixed(2)}</td>
               <td style={{ ...cellStyle, textAlign: 'center' }}>{sgstRate}%</td>
@@ -314,10 +323,10 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
                   <td style={{ ...cellStyle, textAlign: 'right' }}>{cessAmount.toFixed(2)}</td>
                 </>
               )}
-              <td style={{ ...cellStyle, textAlign: 'right' }}>{(billDetails.gst_amount || totalTaxAmount).toFixed(2)}</td>
+              <td style={{ ...cellStyle, textAlign: 'right' }}>{(cgstAmount + sgstAmount + cessAmount).toFixed(2)}</td>
             </tr>
             <tr>
-              <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>Total: {subtotal.toFixed(2)}</td>
+              <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>Total: {taxableValue.toFixed(2)}</td>
               <td style={cellStyle}></td>
               <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{cgstAmount.toFixed(2)}</td>
               <td style={cellStyle}></td>
@@ -328,7 +337,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
                   <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{cessAmount.toFixed(2)}</td>
                 </>
               )}
-              <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{(billDetails.gst_amount || totalTaxAmount).toFixed(2)}</td>
+              <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{(cgstAmount + sgstAmount + cessAmount).toFixed(2)}</td>
             </tr>
           </tbody>
         </table>
@@ -340,7 +349,7 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
           <tbody>
             <tr>
               <td style={{ ...cellStyle, fontWeight: 'bold' }}>
-                Tax Amount (in words): INR {numberToWords(Math.round(billDetails.gst_amount || totalTaxAmount))} Only
+                Tax Amount (in words): INR {numberToWords(Math.round(cgstAmount + sgstAmount + cessAmount))} Only
               </td>
             </tr>
           </tbody>
@@ -353,11 +362,10 @@ const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ billCalculations, bil
           <tr>
             <td style={{ ...cellStyle, width: '50%' }}>
               <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>Company's Bank Details</div>
-              <div><strong>A/c Holder's Name:</strong> YOUR COMPANY NAME</div>
-              <div><strong>Bank Name:</strong> YOUR BANK NAME</div>
-              <div><strong>A/c No.:</strong> 1234567890123456</div>
-              <div><strong>Branch & IFS Code:</strong> BANK0001234</div>
-              <div><strong>SWIFT Code:</strong> BANK0001234</div>
+              <div><strong>A/c Holder's Name:</strong> {sellerInfo?.account_holder_name || sellerInfo?.company_name || 'YOUR COMPANY NAME'}</div>
+              <div><strong>Bank Name:</strong> {sellerInfo?.branch || 'YOUR BANK NAME'}</div>
+              <div><strong>A/c No.:</strong> {sellerInfo?.bank_account_number || 'None'}</div>
+              <div><strong>Branch & IFS Code:</strong> {sellerInfo?.ifsc_code || 'BANK0001234'}</div>
             </td>
             <td style={{ ...cellStyle, width: '50%' }}>
               <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>Declaration</div>

@@ -19,13 +19,28 @@ interface Bill {
   comments?: string;
 }
 
+interface SellerInfo {
+  id: string;
+  company_name: string;
+  email: string;
+  contact_number: string;
+  address?: string;
+  gst_number?: string;
+  bank_account_number?: string;
+  account_holder_name?: string;
+  account_no?: string;
+  branch?: string;
+  ifsc_code?: string;
+}
+
 interface ReceiptTemplateProps {
   billDetails: Bill;
   items: BillItem[];
   customerDetails: Customer;
+  sellerInfo?: SellerInfo;
 }
 
-const ReceiptTemplate: React.FC<ReceiptTemplateProps> = ({ billDetails, items, customerDetails }) => {
+const ReceiptTemplate: React.FC<ReceiptTemplateProps> = ({ billDetails, items, customerDetails, sellerInfo }) => {
   const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
   const discount = billDetails.discount || 0;
   const total = billDetails.total_amount;
@@ -79,13 +94,16 @@ const ReceiptTemplate: React.FC<ReceiptTemplateProps> = ({ billDetails, items, c
             <tr>
               <td style={{ width: '50%', padding: '0 10px 0 0', verticalAlign: 'top' }}>
                 <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '8px' }}>
-                  YOUR COMPANY NAME
+                  {sellerInfo?.company_name || 'YOUR COMPANY NAME'}
                 </div>
                 <div style={{ fontSize: '11px', lineHeight: '1.4' }}>
-                  <div>123 Business Street, Business Area</div>
-                  <div>CITY - 123456</div>
-                  <div>GSTIN/UIN: 29ABCDE1234F1Z5</div>
-                  <div>Contact: contact@yourcompany.com</div>
+                  {sellerInfo?.address && (
+                    <div>{sellerInfo.address}</div>
+                  )}
+                  <div>Contact: {sellerInfo?.email || 'contact@yourcompany.com'}</div>
+                  {sellerInfo?.contact_number && (
+                    <div>Phone: {sellerInfo.contact_number}</div>
+                  )}
                 </div>
               </td>
               <td style={{ width: '50%', padding: '0 0 0 10px', verticalAlign: 'top', borderLeft: '1px solid #ccc' }}>

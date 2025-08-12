@@ -1,28 +1,29 @@
-import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Table,
-  TableHeader,
   TableBody,
-  TableHead,
-  TableRow,
   TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Package, AlertTriangle, ChevronsUpDown, Check, Download } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Calendar } from "@/components/ui/calendar";
-import { format, startOfMonth, endOfMonth } from "date-fns";
-import { DateRange } from "react-day-picker";
+import { useAuth } from "@/hooks/useAuth";
 import { exportToCSV, formatCurrency } from "@/lib/csv-export";
+import { supabase } from "@/lib/supabase";
+import { endOfMonth, format, startOfMonth } from "date-fns";
+import { AlertTriangle, Check, ChevronsUpDown, Download, Package, Plus } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { DateRange } from "react-day-picker";
 
 interface InventoryItem {
   id: string;
@@ -53,6 +54,7 @@ interface Transaction {
 
 export const Inventory = () => {
   const { toast } = useToast();
+  const { role } = useAuth();
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedVendor, setSelectedVendor] = useState("");
   const [quantity, setQuantity] = useState(1);
@@ -395,7 +397,9 @@ export const Inventory = () => {
                         </div>
                         <div className="flex items-center gap-2 mt-2 sm:mt-0">
                           <Badge variant={status.variant}>{status.label}</Badge>
-                          {isEditing ? (<Button size="sm" onClick={() => handleUpdateStock(item.id)}>Save</Button>) : (<Button variant="outline" size="sm" onClick={() => { setEditingItemId(item.id); setNewQuantity(item.current_stock); }}>Edit</Button>)}
+                          {role === 'admin' && (
+                            isEditing ? (<Button size="sm" onClick={() => handleUpdateStock(item.id)}>Save</Button>) : (<Button variant="outline" size="sm" onClick={() => { setEditingItemId(item.id); setNewQuantity(item.current_stock); }}>Edit</Button>)
+                          )}
                         </div>
                       </div>
                     );

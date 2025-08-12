@@ -49,6 +49,8 @@ export interface Customer {
   comments: string;
   type: "customer" | "vendor";
   is_active: boolean;
+  is_cooler: boolean;
+  is_cooler_details: string;
 }
 
 const MandatoryLabel = ({ children }: { children: React.ReactNode }) => (
@@ -89,6 +91,8 @@ export const Customers = () => {
     comments: "",
     type: "customer",
     is_active: true,
+    is_cooler: false,
+    is_cooler_details: "",
   });
 
   const fetchCustomers = useCallback(async () => {
@@ -165,6 +169,8 @@ export const Customers = () => {
         comments: "",
         type: "customer",
         is_active: true,
+        is_cooler: false,
+        is_cooler_details: "",
       });
     }
     setIsDialogOpen(true);
@@ -243,7 +249,7 @@ export const Customers = () => {
               try {
                 exportToCSV({
                   filename: 'customers',
-                  headers: ['Name', 'Type', 'Phone', 'Address', 'GST Number', 'Manager Name', 'Manager Phone', 'Comments', 'Status'],
+                  headers: ['Name', 'Type', 'Phone', 'Address', 'GST Number', 'Manager Name', 'Manager Phone', 'Comments', 'Has Cooler', 'Cooler Details', 'Status'],
                   data: filteredCustomers,
                   transformData: (customer) => ({
                     'Name': customer.name,
@@ -254,6 +260,8 @@ export const Customers = () => {
                     'Manager Name': customer.manager_name || '',
                     'Manager Phone': customer.manager_phone_number || '',
                     'Comments': customer.comments || '',
+                    'Has Cooler': customer.is_cooler ? 'Yes' : 'No',
+                    'Cooler Details': customer.is_cooler_details || '',
                     'Status': customer.is_active ? 'Active' : 'Inactive'
                   })
                 });
@@ -377,6 +385,16 @@ export const Customers = () => {
               </div>
               <div className="flex items-center space-x-2">
                 <Switch
+                  id="is_cooler"
+                  checked={formData.is_cooler}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, is_cooler: checked })
+                  }
+                />
+                <Label htmlFor="is_cooler">Has Cooler</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Switch
                   id="is_active"
                   checked={formData.is_active}
                   onCheckedChange={(checked) =>
@@ -385,6 +403,19 @@ export const Customers = () => {
                 />
                 <Label htmlFor="is_active">Active</Label>
               </div>
+              {formData.is_cooler && (
+                <div className="col-span-2 space-y-2">
+                  <Label htmlFor="is_cooler_details">Cooler Details</Label>
+                  <Textarea
+                    id="is_cooler_details"
+                    value={formData.is_cooler_details}
+                    onChange={(e) =>
+                      setFormData({ ...formData, is_cooler_details: e.target.value })
+                    }
+                    placeholder="Describe the cooler setup, capacity, etc."
+                  />
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-2">
               <Button
@@ -504,6 +535,7 @@ export const Customers = () => {
                 <TableHead>Primary Phone</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>GST Number</TableHead>
+                <TableHead>Cooler</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -511,7 +543,7 @@ export const Customers = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center">
+                  <TableCell colSpan={7} className="text-center">
                     Loading...
                   </TableCell>
                 </TableRow>
@@ -530,6 +562,22 @@ export const Customers = () => {
                       </Badge>
                     </TableCell>
                     <TableCell>{customer.gst_number}</TableCell>
+                    <TableCell>
+                      {customer.is_cooler ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="outline" className="cursor-help">
+                              Has Cooler
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{customer.is_cooler_details || "No details provided"}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">No cooler</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge
                         variant={customer.is_active ? "default" : "destructive"}
@@ -621,6 +669,17 @@ export const Customers = () => {
                         <div>
                           <p className="text-xs text-muted-foreground">Comments</p>
                           <p className="text-sm">{customer.comments}</p>
+                        </div>
+                      )}
+                      {customer.is_cooler && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Cooler</p>
+                          <p className="text-sm">
+                            Has cooler
+                            {customer.is_cooler_details && (
+                              <span className="text-muted-foreground"> • {customer.is_cooler_details}</span>
+                            )}
+                          </p>
                         </div>
                       )}
                     </div>
