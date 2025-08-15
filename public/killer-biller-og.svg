@@ -1,0 +1,19 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#1e40af"/>
+  <rect x="100" y="100" width="1000" height="430" rx="20" fill="white"/>
+  
+  <!-- Invoice lines -->
+  <rect x="150" y="180" width="800" height="8" rx="4" fill="#1e40af"/>
+  <rect x="150" y="220" width="600" height="6" rx="3" fill="#1e40af"/>
+  <rect x="150" y="250" width="500" height="6" rx="3" fill="#1e40af"/>
+  <rect x="150" y="280" width="400" height="6" rx="3" fill="#1e40af"/>
+  <rect x="150" y="310" width="300" height="6" rx="3" fill="#1e40af"/>
+  
+  <!-- Dollar sign circle -->
+  <circle cx="900" cy="200" r="60" fill="#fbbf24"/>
+  <text x="900" y="220" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#1e40af">$</text>
+  
+  <!-- Title -->
+  <text x="600" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#1e40af">Killer Biller</text>
+  <text x="600" y="450" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" fill="#6b7280">Professional Billing Management</text>
+</svg>
