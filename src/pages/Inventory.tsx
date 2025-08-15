@@ -36,6 +36,7 @@ interface InventoryItem {
 interface Product {
   id: string;
   name: string;
+  lot_size?: number;
 }
 
 interface Vendor {
@@ -58,6 +59,8 @@ export const Inventory = () => {
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedVendor, setSelectedVendor] = useState("");
   const [quantity, setQuantity] = useState(1);
+  const [cases, setCases] = useState(0);
+  const [selectedProductLotSize, setSelectedProductLotSize] = useState(1);
   const [comments, setComments] = useState("");
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -151,7 +154,7 @@ export const Inventory = () => {
 
       const { data, error } = await supabase
         .from("product_vendors")
-        .select("products(id, name)")
+        .select("products(id, name, lot_size)")
         .eq("vendor_id", selectedVendor);
 
       if (error) {
@@ -166,6 +169,20 @@ export const Inventory = () => {
     fetchProductsForVendor();
   }, [selectedVendor, toast]);
 
+  const handleCasesChange = (value: number) => {
+    setCases(value);
+    if (value > 0) {
+      setQuantity(value * selectedProductLotSize);
+    }
+  };
+
+  const handleQuantityChange = (value: number) => {
+    setQuantity(value);
+    if (selectedProductLotSize > 0) {
+      setCases(Math.floor(value / selectedProductLotSize));
+    }
+  };
+
   const submitStock = async () => {
     if (!selectedProduct || !selectedVendor || quantity <= 0) {
       toast({ title: "Error", description: "Please select a vendor, a product, and enter a valid quantity.", variant: "destructive" });
@@ -179,6 +196,8 @@ export const Inventory = () => {
       setSelectedProduct("");
       setSelectedVendor("");
       setQuantity(1);
+      setCases(0);
+      setSelectedProductLotSize(1);
       setComments("");
       fetchInitialData();
     }
@@ -311,6 +330,7 @@ export const Inventory = () => {
                               value={product.name}
                               onSelect={() => {
                                 setSelectedProduct(product.id);
+                                setSelectedProductLotSize(product.lot_size || 1);
                                 setAddStockProductSearchOpen(false);
                               }}
                               className="cursor-pointer"
@@ -326,8 +346,33 @@ export const Inventory = () => {
                 </Popover>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="quantity">Quantity to Add</Label>
-                <Input type="number" min="1" value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} />
+                <Label htmlFor="cases">Cases</Label>
+                <Input 
+                  type="number" 
+                  min="0" 
+                  value={cases} 
+                  onChange={(e) => handleCasesChange(parseInt(e.target.value) || 0)} 
+                  placeholder="Enter number of cases"
+                />
+                {selectedProduct && selectedProductLotSize > 1 && (
+                  <p className="text-xs text-muted-foreground">
+                    1 case = {selectedProductLotSize} units
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="quantity">Quantity to Add (units)</Label>
+                <Input 
+                  type="number" 
+                  min="1" 
+                  value={quantity} 
+                  onChange={(e) => handleQuantityChange(parseInt(e.target.value) || 1)} 
+                />
+                {selectedProduct && selectedProductLotSize > 1 && cases > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {cases} case{cases !== 1 ? 's' : ''} = {quantity} units
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="comments">Comments</Label>
