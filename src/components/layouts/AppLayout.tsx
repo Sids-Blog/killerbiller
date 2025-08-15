@@ -48,7 +48,7 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
               className="h-8 w-auto"
             />
             <h1 className="text-lg font-semibold text-foreground">
-            KillerBiller
+            NA ENTERPRISES
           </h1>
           </div>
           
