@@ -1110,69 +1110,98 @@ export const Admin = () => {
         </p>
       </div>
       
-      <Tabs defaultValue="products" className="w-full">
-        <TabsList className="grid w-full grid-cols-6 h-auto p-1">
+      <Tabs defaultValue="seller" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 h-auto p-1">
           <TabsTrigger
-            value="products"
-            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+            value="seller"
+            className="text-sm sm:text-base px-4 sm:px-6 py-3 data-[state=active]:bg-background"
           >
-            <span className="hidden sm:inline">Products</span>
-            <span className="sm:hidden">Products</span>
+            <Building className="h-4 w-4 mr-2" />
+            Seller Management
           </TabsTrigger>
           <TabsTrigger
-            value="seller-info"
-            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+            value="admin-tools"
+            className="text-sm sm:text-base px-4 sm:px-6 py-3 data-[state=active]:bg-background"
           >
-            <span className="hidden sm:inline">Seller Info</span>
-            <span className="sm:hidden">Seller</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="expense-categories"
-            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
-          >
-            <span className="hidden sm:inline">Expense Categories</span>
-            <span className="sm:hidden">Categories</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="insights"
-            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
-          >
-            <span className="hidden sm:inline">Insights</span>
-            <span className="sm:hidden">Insights</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="user-management"
-            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
-          >
-            <span className="hidden sm:inline">User Management</span>
-            <span className="sm:hidden">Users</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="export"
-            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
-          >
-            <span className="hidden sm:inline">Export</span>
-            <span className="sm:hidden">Export</span>
+            <Edit className="h-4 w-4 mr-2" />
+            Admin Tools
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="products" className="mt-4 sm:mt-6">
-          <Products />
+        <TabsContent value="seller" className="mt-4 sm:mt-6">
+          <Tabs defaultValue="products" className="w-full">
+            <TabsList className="grid w-full grid-cols-3 h-auto p-1">
+              <TabsTrigger
+                value="products"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">Products</span>
+                <span className="sm:hidden">Products</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="seller-info"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">Seller Info</span>
+                <span className="sm:hidden">Seller</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="expense-categories"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">Expense Categories</span>
+                <span className="sm:hidden">Categories</span>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="products" className="mt-4 sm:mt-6">
+              <Products />
+            </TabsContent>
+            <TabsContent value="seller-info" className="mt-4 sm:mt-6">
+              <SellerInfoManager />
+            </TabsContent>
+            <TabsContent value="expense-categories" className="mt-4 sm:mt-6">
+              <ExpenseCategoryManager />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
-        <TabsContent value="seller-info" className="mt-4 sm:mt-6">
-          <SellerInfoManager />
-        </TabsContent>
-        <TabsContent value="expense-categories" className="mt-4 sm:mt-6">
-          <ExpenseCategoryManager />
-        </TabsContent>
-        <TabsContent value="insights" className="mt-4 sm:mt-6">
-          <InsightsManager />
-        </TabsContent>
-        <TabsContent value="user-management" className="mt-4 sm:mt-6">
-          <UserManagement />
-        </TabsContent>
-        <TabsContent value="export" className="mt-4 sm:mt-6">
-          <DatabaseExportManager />
+
+        <TabsContent value="admin-tools" className="mt-4 sm:mt-6">
+          <Tabs defaultValue="insights" className="w-full">
+            <TabsList className="grid w-full grid-cols-3 h-auto p-1">
+              <TabsTrigger
+                value="insights"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">Insights</span>
+                <span className="sm:hidden">Insights</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="user-management"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">User Management</span>
+                <span className="sm:hidden">Users</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="export"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">Export</span>
+                <span className="sm:hidden">Export</span>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="insights" className="mt-4 sm:mt-6">
+              <InsightsManager />
+            </TabsContent>
+            <TabsContent value="user-management" className="mt-4 sm:mt-6">
+              <UserManagement />
+            </TabsContent>
+            <TabsContent value="export" className="mt-4 sm:mt-6">
+              <DatabaseExportManager />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
     </div>
