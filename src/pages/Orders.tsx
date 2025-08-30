@@ -61,6 +61,7 @@ interface Product {
 
 interface Order {
   id: string;
+  order_number: string;
   created_at: string;
   status: 'pending' | 'fulfilled';
   customer_id: string;
@@ -111,7 +112,7 @@ export const Orders = () => {
       .select("*, inventory(quantity)");
     const ordersPromise = supabase
       .from("orders")
-      .select("id, created_at, status, customer_id, comments, customers ( name ), order_items(id, lots, units, product_id, products(name, lot_size))")
+      .select("id, order_number, created_at, status, customer_id, comments, customers ( name ), order_items(id, lots, units, product_id, products(name, lot_size))")
       .order("created_at", { ascending: false });
 
     const [customerRes, productRes, ordersRes] = await Promise.all([
@@ -576,7 +577,7 @@ export const Orders = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Order ID</TableHead>
+                    <TableHead>Order Number</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Items</TableHead>
@@ -590,7 +591,7 @@ export const Orders = () => {
                   ) : (
                     filteredOrders.map(order => (
                       <TableRow key={order.id}>
-                        <TableCell className="font-mono">{order.id.slice(0, 8)}</TableCell>
+                        <TableCell className="font-mono">{order.order_number || `#${order.id.slice(0, 8)}...`}</TableCell>
                         <TableCell>{order.customers?.name ?? "N/A"}</TableCell>
                         <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
                         <TableCell>
@@ -634,7 +635,7 @@ export const Orders = () => {
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Order #{editingOrder?.id.slice(0, 8)}</DialogTitle>
+            <DialogTitle>Edit Order {editingOrder?.order_number || `#${editingOrder?.id.slice(0, 8)}...`}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             {editedItems.map((item, index) => (
