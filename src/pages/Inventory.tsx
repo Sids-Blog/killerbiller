@@ -31,6 +31,7 @@ interface InventoryItem {
   current_stock: number;
   min_stock: number;
   price: number;
+  lot_size: number;
 }
 
 interface Product {
@@ -64,6 +65,7 @@ export const Inventory = () => {
   const [comments, setComments] = useState("");
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [filteredInventory, setFilteredInventory] = useState<InventoryItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -80,6 +82,7 @@ export const Inventory = () => {
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [addStockVendorSearchOpen, setAddStockVendorSearchOpen] = useState(false);
   const [addStockProductSearchOpen, setAddStockProductSearchOpen] = useState(false);
+  const [inventorySearchTerm, setInventorySearchTerm] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
@@ -89,7 +92,7 @@ export const Inventory = () => {
     setLoading(true);
     const inventoryPromise = supabase.from("inventory").select(`
       quantity,
-      products (id, name, price, min_stock)
+      products (id, name, price, min_stock, lot_size)
     `);
     const vendorsPromise = supabase.from("customers").select("id, name").eq("type", "vendor").order("name", { ascending: true });
     const allProductsPromise = supabase.from("products").select("id, name").order("name", { ascending: true });
@@ -116,21 +119,22 @@ export const Inventory = () => {
 
     if (inventoryRes.error) toast({ title: "Error fetching inventory", description: inventoryRes.error.message, variant: "destructive" });
     else {
-      const formattedData = inventoryRes.data.map((item: { products: { id: string; name: string; price: number; min_stock: number }; quantity: number }) => ({
+      const formattedData = inventoryRes.data.map((item: any) => ({
         id: item.products.id,
         name: item.products.name,
         current_stock: item.quantity,
         min_stock: item.products.min_stock,
         price: item.products.price,
+        lot_size: item.products.lot_size || 1,
       }));
-      setInventory(formattedData);
+      setInventory(formattedData as InventoryItem[]);
     }
 
     if (vendorsRes.error) toast({ title: "Error fetching vendors", description: vendorsRes.error.message, variant: "destructive" });
     else setVendors(vendorsRes.data || []);
 
     if (transactionsRes.error) toast({ title: "Error fetching transactions", description: transactionsRes.error.message, variant: "destructive" });
-    else setTransactions(transactionsRes.data as Transaction[]);
+    else setTransactions(transactionsRes.data as unknown as Transaction[]);
 
     if (allProductsRes.error) toast({ title: "Error fetching all products", description: allProductsRes.error.message, variant: "destructive" });
     else setAllProducts(allProductsRes.data || []);
@@ -141,6 +145,18 @@ export const Inventory = () => {
   useEffect(() => {
     fetchInitialData();
   }, [fetchInitialData]);
+
+  // Filter inventory based on search term
+  useEffect(() => {
+    if (!inventorySearchTerm.trim()) {
+      setFilteredInventory(inventory);
+    } else {
+      const filtered = inventory.filter(item =>
+        item.name.toLowerCase().includes(inventorySearchTerm.toLowerCase())
+      );
+      setFilteredInventory(filtered);
+    }
+  }, [inventorySearchTerm, inventory]);
 
   // Effect to fetch products when a vendor is selected
   useEffect(() => {
@@ -161,7 +177,7 @@ export const Inventory = () => {
         toast({ title: "Error fetching products for vendor", description: error.message, variant: "destructive" });
         setProducts([]);
       } else {
-        setProducts(data.map(item => item.products) as Product[]);
+        setProducts(data.map(item => item.products) as unknown as Product[]);
       }
       setLoadingProducts(false);
     };
@@ -394,13 +410,16 @@ export const Inventory = () => {
                     try {
                       exportToCSV({
                         filename: 'current-inventory',
-                        headers: ['Product Name', 'Current Stock', 'Minimum Stock', 'Price', 'Stock Status'],
-                        data: inventory,
+                        headers: ['Product Name', 'Current Stock (Units)', 'Cases', 'Lot Size', 'Minimum Stock', 'Price', 'Stock Status'],
+                        data: filteredInventory,
                         transformData: (item) => {
                           const stockStatus = item.current_stock === 0 ? 'Out of Stock' : item.current_stock <= item.min_stock ? 'Low Stock' : 'In Stock';
+                          const cases = item.lot_size > 1 ? Math.floor(item.current_stock / item.lot_size) : 0;
                           return {
                             'Product Name': item.name,
-                            'Current Stock': item.current_stock.toString(),
+                            'Current Stock (Units)': item.current_stock.toString(),
+                            'Cases': cases.toString(),
+                            'Lot Size': item.lot_size.toString(),
                             'Minimum Stock': item.min_stock.toString(),
                             'Price': formatCurrency(item.price),
                             'Stock Status': stockStatus
@@ -420,9 +439,33 @@ export const Inventory = () => {
               </div>
             </CardHeader>
             <CardContent>
+              {/* Search Filter */}
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <Input
+                    placeholder="Search products by name..."
+                    value={inventorySearchTerm}
+                    onChange={(e) => setInventorySearchTerm(e.target.value)}
+                    className="max-w-md"
+                  />
+                  {inventorySearchTerm && (
+                    <span className="text-sm text-muted-foreground">
+                      Showing {filteredInventory.length} of {inventory.length} products
+                    </span>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setInventorySearchTerm("")}
+                  disabled={!inventorySearchTerm}
+                >
+                  Clear
+                </Button>
+              </div>
               {loading ? (<p>Loading inventory...</p>) : (
                 <div className="space-y-3">
-                  {inventory.map((item) => {
+                  {filteredInventory.map((item) => {
                     const status = getStockStatus(item.current_stock, item.min_stock);
                     const isEditing = editingItemId === item.id;
                     return (
@@ -435,9 +478,23 @@ export const Inventory = () => {
                                 <Label htmlFor={`quantity-${item.id}`} className="text-xs">Current:</Label>
                                 <Input id={`quantity-${item.id}`} type="number" value={newQuantity} onChange={(e) => setNewQuantity(parseInt(e.target.value, 10) || 0)} className="h-8 w-24" />
                               </div>
-                            ) : (<span>Current: {item.current_stock}</span>)}
+                            ) : (
+                              <div className="flex items-center gap-4">
+                                <span>Current: {item.current_stock} units</span>
+                                {item.lot_size > 1 && (
+                                  <span className="text-blue-600 font-medium">
+                                    ({Math.floor(item.current_stock / item.lot_size)} cases)
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             <span>Min: {item.min_stock}</span>
                             <span>Value: Rs. {(item.current_stock * item.price).toFixed(2)}</span>
+                            {item.lot_size > 1 && (
+                              <span className="text-green-600">
+                                Lot Size: {item.lot_size}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2 mt-2 sm:mt-0">
