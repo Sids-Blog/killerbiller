@@ -1,0 +1,29 @@
+<svg width="200" height="80" viewBox="0 0 200 80" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .logo-text { font-family: Arial, sans-serif; font-weight: bold; font-size: 12px; fill: white; }
+    </style>
+  </defs>
+  
+  <!-- Geometric symbol - stylized M/N with X overlay -->
+  <g transform="translate(100, 25)">
+    <!-- Main M/N shape -->
+    <path d="M -15 15 L -5 -15 L 5 5 L 15 -15 L 25 15" 
+          stroke="white" 
+          stroke-width="3" 
+          fill="none" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"/>
+    
+    <!-- X overlay -->
+    <path d="M -20 -10 L 20 10 M 20 -10 L -20 10" 
+          stroke="white" 
+          stroke-width="2" 
+          fill="none" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"/>
+  </g>
+  
+  <!-- ENTERPRISES text -->
+  <text x="100" y="55" text-anchor="middle" class="logo-text">ENTERPRISES</text>
+</svg>

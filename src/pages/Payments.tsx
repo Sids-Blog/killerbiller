@@ -135,6 +135,11 @@ export const Payments = () => {
   const [creditVendorFilter, setCreditVendorFilter] = useState("all");
   const [creditDateRange, setCreditDateRange] = useState<DateRange | undefined>();
   const [creditVendorFilterSearchOpen, setCreditVendorFilterSearchOpen] = useState(false);
+  
+  // Balance search filters
+  const [customerBalanceSearchTerm, setCustomerBalanceSearchTerm] = useState("");
+  const [vendorBalanceSearchTerm, setVendorBalanceSearchTerm] = useState("");
+  
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
@@ -142,6 +147,21 @@ export const Payments = () => {
 
   const combinedParties = useMemo(() => [...customers, ...vendors], [customers, vendors]);
   const combinedPartiesRef = useRef(combinedParties);
+
+  // Filtered balance data
+  const filteredCustomerBalances = useMemo(() => {
+    if (!customerBalanceSearchTerm.trim()) return customers;
+    return customers.filter(customer =>
+      customer.name.toLowerCase().includes(customerBalanceSearchTerm.toLowerCase())
+    );
+  }, [customers, customerBalanceSearchTerm]);
+
+  const filteredVendorBalances = useMemo(() => {
+    if (!vendorBalanceSearchTerm.trim()) return vendors;
+    return vendors.filter(vendor =>
+      vendor.name.toLowerCase().includes(vendorBalanceSearchTerm.toLowerCase())
+    );
+  }, [vendors, vendorBalanceSearchTerm]);
 
   useEffect(() => {
     combinedPartiesRef.current = combinedParties;
@@ -712,7 +732,7 @@ export const Payments = () => {
                       exportToCSV({
                         filename: 'customer-balances',
                         headers: ['Customer Name', 'Outstanding Balance'],
-                        data: customers,
+                        data: filteredCustomerBalances,
                         transformData: (customer) => ({
                           'Customer Name': customer.name,
                           'Outstanding Balance': formatCurrency(customer.outstanding_balance || 0)
@@ -729,7 +749,32 @@ export const Payments = () => {
                   Export CSV
                 </Button>
               </div>
-            </CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Customer</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{customers.map(c => (<TableRow key={c.id}><TableCell>{c.name}</TableCell><TableCell className="text-right">Rs. {c.outstanding_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
+            </CardHeader><CardContent>
+              {/* Customer Search Filter */}
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <Input
+                    placeholder="Search customers by name..."
+                    value={customerBalanceSearchTerm}
+                    onChange={(e) => setCustomerBalanceSearchTerm(e.target.value)}
+                    className="max-w-md"
+                  />
+                  {customerBalanceSearchTerm && (
+                    <span className="text-sm text-muted-foreground">
+                      Showing {filteredCustomerBalances.length} of {customers.length} customers
+                    </span>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCustomerBalanceSearchTerm("")}
+                  disabled={!customerBalanceSearchTerm}
+                >
+                  Clear
+                </Button>
+              </div>
+              <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Customer</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{filteredCustomerBalances.map(c => (<TableRow key={c.id}><TableCell>{c.name}</TableCell><TableCell className="text-right">Rs. {c.outstanding_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
             <Card><CardHeader>
               <div className="flex justify-between items-center">
                 <CardTitle>Vendor Credit Balances</CardTitle>
@@ -741,7 +786,7 @@ export const Payments = () => {
                       exportToCSV({
                         filename: 'vendor-balances',
                         headers: ['Vendor Name', 'Credit Balance'],
-                        data: vendors,
+                        data: filteredVendorBalances,
                         transformData: (vendor) => ({
                           'Vendor Name': vendor.name,
                           'Credit Balance': formatCurrency(vendor.credit_balance || 0)
@@ -758,7 +803,32 @@ export const Payments = () => {
                   Export CSV
                 </Button>
               </div>
-            </CardHeader><CardContent><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead className="text-right">Credit Balance</TableHead></TableRow></TableHeader><TableBody>{vendors.map(v => (<TableRow key={v.id}><TableCell>{v.name}</TableCell><TableCell className="text-right">Rs. {v.credit_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
+            </CardHeader><CardContent>
+              {/* Vendor Search Filter */}
+              <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <Input
+                    placeholder="Search vendors by name..."
+                    value={vendorBalanceSearchTerm}
+                    onChange={(e) => setVendorBalanceSearchTerm(e.target.value)}
+                    className="max-w-md"
+                  />
+                  {vendorBalanceSearchTerm && (
+                    <span className="text-sm text-muted-foreground">
+                      Showing {filteredVendorBalances.length} of {vendors.length} vendors
+                    </span>
+                  )}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setVendorBalanceSearchTerm("")}
+                  disabled={!vendorBalanceSearchTerm}
+                >
+                  Clear
+                </Button>
+              </div>
+              <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead className="text-right">Credit Balance</TableHead></TableRow></TableHeader><TableBody>{filteredVendorBalances.map(v => (<TableRow key={v.id}><TableCell>{v.name}</TableCell><TableCell className="text-right">Rs. {v.credit_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
           </div>
         </TabsContent>
         <TabsContent value="credits">

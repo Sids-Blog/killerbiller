@@ -51,8 +51,23 @@ export const Sidebar = ({
   const { role } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  // Debug: Log the current role and navigation
+  console.log('Sidebar - Current role:', role);
+  console.log('Sidebar - All navigation items:', allNavigation);
 
-  const navigation = allNavigation.filter(item => item.roles.includes(role || ''));
+  // If no role is assigned, show all navigation items (fallback)
+  let navigation = role ? allNavigation.filter(item => item.roles.includes(role)) : allNavigation;
+  
+  // Fallback: if no navigation items are found, show at least basic items
+  if (navigation.length === 0) {
+    console.warn('No navigation items found for role:', role, 'showing fallback navigation');
+    navigation = [
+      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ['admin', 'manager'] },
+      { name: "Orders", href: "/orders", icon: ShoppingCart, roles: ['admin', 'manager', 'staff'] },
+      { name: "Customers", href: "/customers", icon: Users, roles: ['admin', 'manager'] },
+    ];
+  }
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

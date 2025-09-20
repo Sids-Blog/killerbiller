@@ -24,6 +24,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Trash2, Plus, FileText, Edit, ChevronsUpDown, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
 import {
   Dialog,
@@ -61,6 +62,7 @@ interface Product {
 
 interface Order {
   id: string;
+  order_number: string;
   created_at: string;
   status: 'pending' | 'fulfilled';
   customer_id: string;
@@ -71,6 +73,8 @@ interface Order {
 
 export const Orders = () => {
   const { toast } = useToast();
+  const { role } = useAuth();
+  
   // Create Order states
   const [selectedCustomer, setSelectedCustomer] = useState("");
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
@@ -111,7 +115,7 @@ export const Orders = () => {
       .select("*, inventory(quantity)");
     const ordersPromise = supabase
       .from("orders")
-      .select("id, created_at, status, customer_id, comments, customers ( name ), order_items(id, lots, units, product_id, products(name, lot_size))")
+      .select("id, order_number, created_at, status, customer_id, comments, customers ( name ), order_items(id, lots, units, product_id, products(name, lot_size))")
       .order("created_at", { ascending: false });
 
     const [customerRes, productRes, ordersRes] = await Promise.all([
@@ -238,6 +242,11 @@ export const Orders = () => {
     return (lots * lot_size) + units;
   }
 
+  // Check if user can generate bills (admin and manager only)
+  const canGenerateBill = () => {
+    return role === 'admin' || role === 'manager';
+  }
+
   const openEditModal = (order: Order) => {
     setEditingOrder(order);
     const transformedItems = order.order_items.map(item => {
@@ -306,18 +315,23 @@ export const Orders = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Orders</h1>
-        <p className="text-muted-foreground">Capture and manage customer orders</p>
-      </div>
+             <div>
+         <h1 className="text-3xl font-bold text-foreground">Orders</h1>
+         <p className="text-muted-foreground">Capture and manage customer orders</p>
+         {role === 'staff' && (
+           <p className="text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-md mt-2">
+             ⚠️ Staff Role: You can create and view orders but cannot edit or generate bills
+           </p>
+         )}
+       </div>
 
       <Tabs defaultValue="create-order">
-        <TabsList>
-          <TabsTrigger value="create-order">Create Order</TabsTrigger>
-          <TabsTrigger value="all-orders">All Orders</TabsTrigger>
-        </TabsList>
-        <TabsContent value="create-order">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
+                 <TabsList>
+           <TabsTrigger value="create-order">Create Order</TabsTrigger>
+           <TabsTrigger value="all-orders">All Orders</TabsTrigger>
+         </TabsList>
+                 <TabsContent value="create-order">
+         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
             <Card>
               <CardHeader>
                 <CardTitle>Order Details</CardTitle>
@@ -499,21 +513,26 @@ export const Orders = () => {
                       </div>
                     </div>
 
-                    <Button
-                      onClick={submitOrder}
-                      className="w-full"
-                      disabled={
-                        !selectedCustomer || orderItems.length === 0 || loading
-                      }
-                    >
-                      Create Order
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
+                                         <Button
+                       onClick={submitOrder}
+                       className="w-full"
+                       disabled={
+                         !selectedCustomer || orderItems.length === 0 || loading
+                       }
+                     >
+                       Create Order
+                     </Button>
+                                          {role === 'staff' && (
+                       <p className="text-xs text-muted-foreground text-center">
+                         Note: Staff can create orders but cannot generate bills or edit existing orders
+                       </p>
+                     )}
+                   </div>
+                 )}
+               </CardContent>
+             </Card>
+           </div>
+         </TabsContent>
         <TabsContent value="all-orders">
           <Card className="mt-4">
             <CardHeader>
@@ -576,7 +595,7 @@ export const Orders = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Order ID</TableHead>
+                    <TableHead>Order Number</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Items</TableHead>
@@ -590,7 +609,7 @@ export const Orders = () => {
                   ) : (
                     filteredOrders.map(order => (
                       <TableRow key={order.id}>
-                        <TableCell className="font-mono">{order.id.slice(0, 8)}</TableCell>
+                        <TableCell className="font-mono">{order.order_number || `#${order.id.slice(0, 8)}...`}</TableCell>
                         <TableCell>{order.customers?.name ?? "N/A"}</TableCell>
                         <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
                         <TableCell>
@@ -608,15 +627,27 @@ export const Orders = () => {
                         <TableCell className="flex gap-2">
                           {order.status === 'pending' && (
                             <>
-                              <Button variant="outline" size="sm" asChild>
-                                <Link to="/billing" state={{ order: {...order, order_items: order.order_items.map(oi => ({...oi, quantity: calculateQuantity(oi.lots, oi.units, oi.products?.lot_size ?? 1)})) } }}>
-                                  <FileText className="h-4 w-4 mr-2" />
-                                  Generate Bill
-                                </Link>
-                              </Button>
-                              <Button variant="ghost" size="icon" onClick={() => openEditModal(order)}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
+                              {canGenerateBill() ? (
+                                <Button variant="outline" size="sm" asChild>
+                                  <Link to="/billing" state={{ order: {...order, order_items: order.order_items.map(oi => ({...oi, quantity: calculateQuantity(oi.lots, oi.units, oi.products?.lot_size ?? 1)})) } }}>
+                                    <FileText className="h-4 w-4 mr-2" />
+                                    Generate Bill
+                                  </Link>
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-muted-foreground px-2 py-1 bg-muted rounded">
+                                  Admin/Manager only
+                                </span>
+                              )}
+                              {(role === 'admin' || role === 'manager') ? (
+                                <Button variant="ghost" size="icon" onClick={() => openEditModal(order)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-muted-foreground px-2 py-1 bg-muted rounded">
+                                  View only
+                                </span>
+                              )}
                             </>
                           )}
                         </TableCell>
@@ -634,7 +665,7 @@ export const Orders = () => {
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Order #{editingOrder?.id.slice(0, 8)}</DialogTitle>
+            <DialogTitle>Edit Order {editingOrder?.order_number || `#${editingOrder?.id.slice(0, 8)}...`}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             {editedItems.map((item, index) => (

@@ -11,7 +11,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Edit, Trash2, Plus, Building, Download } from "lucide-react";
+import { Edit, Trash2, Plus, Building, Download, AlertTriangle, Clock, DollarSign, User, TrendingUp, TrendingDown } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import * as XLSX from 'exceljs';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
@@ -833,6 +834,542 @@ SET session_replication_role = replica;
   );
 };
 
+const InsightsManager = () => {
+  const { toast } = useToast();
+  const [outstandingBills, setOutstandingBills] = useState<any[]>([]);
+  const [productOrderData, setProductOrderData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchProductOrderData = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('order_items')
+        .select(`
+          product_id,
+          lots,
+          units,
+          orders!inner (
+            created_at
+          ),
+          products (
+            name,
+            lot_size
+          )
+        `);
+
+      if (error) {
+        toast({ 
+          title: "Error fetching product data", 
+          description: error.message, 
+          variant: "destructive" 
+        });
+        return;
+      }
+
+      // Calculate date ranges
+      const now = new Date();
+      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+
+      // Calculate quantities per product with time periods
+      const productMap = new Map();
+      
+      data?.forEach(item => {
+        if (item.products && item.orders) {
+          const productId = item.product_id;
+          const lotSize = item.products.lot_size || 1;
+          const totalQuantity = (item.lots * lotSize) + item.units;
+          const orderDate = new Date(item.orders.created_at);
+          
+          if (!productMap.has(productId)) {
+            productMap.set(productId, {
+              name: item.products.name,
+              totalQuantity: 0,
+              thisMonth: 0,
+              lastMonth: 0,
+              orderCount: 0
+            });
+          }
+          
+          const product = productMap.get(productId);
+          product.totalQuantity += totalQuantity;
+          product.orderCount += 1;
+          
+          // Check if order is from this month
+          if (orderDate >= thisMonthStart) {
+            product.thisMonth += totalQuantity;
+          }
+          
+          // Check if order is from last month
+          if (orderDate >= lastMonthStart && orderDate <= lastMonthEnd) {
+            product.lastMonth += totalQuantity;
+          }
+        }
+      });
+
+      const productArray = Array.from(productMap.values())
+        .sort((a, b) => b.totalQuantity - a.totalQuantity);
+      
+      setProductOrderData(productArray);
+    } catch (error) {
+      toast({ 
+        title: "Error", 
+        description: "Failed to fetch product order data", 
+        variant: "destructive" 
+      });
+    }
+  }, [toast]);
+
+  const fetchOutstandingBills = useCallback(async () => {
+    try {
+      // Get bills that are outstanding for more than 15 days
+      const fifteenDaysAgo = new Date();
+      fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+      
+      const { data, error } = await supabase
+        .from('bills')
+        .select(`
+          id,
+          invoice_number,
+          total_amount,
+          paid_amount,
+          status,
+          date_of_bill,
+          created_at,
+          customers (
+            id,
+            name,
+            primary_phone_number,
+            outstanding_balance
+          )
+        `)
+        .in('status', ['outstanding', 'partial'])
+        .lt('date_of_bill', fifteenDaysAgo.toISOString())
+        .order('date_of_bill', { ascending: true });
+
+      if (error) {
+        toast({ 
+          title: "Error fetching outstanding bills", 
+          description: error.message, 
+          variant: "destructive" 
+        });
+      } else {
+        setOutstandingBills(data || []);
+      }
+    } catch (error) {
+      toast({ 
+        title: "Error", 
+        description: "Failed to fetch outstanding bills", 
+        variant: "destructive" 
+      });
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      await Promise.all([
+        fetchOutstandingBills(),
+        fetchProductOrderData()
+      ]);
+      setLoading(false);
+    };
+    fetchData();
+  }, [fetchOutstandingBills, fetchProductOrderData]);
+
+  const getDaysOverdue = (billDate: string) => {
+    const billDateObj = new Date(billDate);
+    const today = new Date();
+    const diffTime = Math.abs(today.getTime() - billDateObj.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  const getOutstandingAmount = (total: number, paid: number) => {
+    return total - paid;
+  };
+
+  const getTotalOutstandingAmount = () => {
+    return outstandingBills.reduce((total, bill) => {
+      return total + getOutstandingAmount(bill.total_amount, bill.paid_amount);
+    }, 0);
+  };
+
+  const getTotalOutstandingBills = () => {
+    return outstandingBills.length;
+  };
+
+  const getCustomersWithOutstandingBills = () => {
+    const customerMap = new Map();
+    
+    outstandingBills.forEach(bill => {
+      if (bill.customers) {
+        const customerId = bill.customers.id;
+        if (!customerMap.has(customerId)) {
+          customerMap.set(customerId, {
+            id: customerId,
+            name: bill.customers.name,
+            phone: bill.customers.primary_phone_number,
+            outstanding_balance: bill.customers.outstanding_balance,
+            bills: [],
+            total_outstanding: 0,
+            bill_count: 0
+          });
+        }
+        
+        const customer = customerMap.get(customerId);
+        const outstandingAmount = getOutstandingAmount(bill.total_amount, bill.paid_amount);
+        
+        customer.bills.push({
+          id: bill.id,
+          invoice_number: bill.invoice_number,
+          date_of_bill: bill.date_of_bill,
+          total_amount: bill.total_amount,
+          paid_amount: bill.paid_amount,
+          outstanding_amount: outstandingAmount,
+          days_overdue: getDaysOverdue(bill.date_of_bill)
+        });
+        
+        customer.total_outstanding += outstandingAmount;
+        customer.bill_count += 1;
+      }
+    });
+    
+    return Array.from(customerMap.values()).sort((a, b) => b.total_outstanding - a.total_outstanding);
+  };
+
+  const getMostOrderedProducts = (limit = 5) => {
+    return productOrderData.slice(0, limit);
+  };
+
+  const getLeastOrderedProducts = (limit = 5) => {
+    return productOrderData.slice(-limit).reverse();
+  };
+
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
+        <p className="text-muted-foreground text-sm sm:text-base">
+          Monitor outstanding bills and customer payment status for better cash flow management.
+        </p>
+        <Button 
+          onClick={async () => {
+            setLoading(true);
+            await Promise.all([
+              fetchOutstandingBills(),
+              fetchProductOrderData()
+            ]);
+            setLoading(false);
+          }}
+          variant="outline"
+          size="sm"
+          className="w-full sm:w-auto"
+          disabled={loading}
+        >
+          <Clock className="h-4 w-4 mr-2" />
+          {loading ? 'Refreshing...' : 'Refresh'}
+        </Button>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Outstanding</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">₹{getTotalOutstandingAmount().toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">
+              Across all overdue bills
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Overdue Bills</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{getTotalOutstandingBills()}</div>
+            <p className="text-xs text-muted-foreground">
+              Bills older than 15 days
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Affected Customers</CardTitle>
+            <User className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{getCustomersWithOutstandingBills().length}</div>
+            <p className="text-xs text-muted-foreground">
+              Customers with overdue bills
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Product Analytics Score Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Most Ordered Products</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex justify-center py-8">
+                <p className="text-sm text-muted-foreground">Loading...</p>
+              </div>
+            ) : productOrderData.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-muted-foreground">No order data available</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={getMostOrderedProducts()} margin={{ top: 20, right: 30, left: 20, bottom: 80 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey="name" 
+                        tick={{ fontSize: 10 }}
+                        angle={-45}
+                        textAnchor="end"
+                        height={60}
+                      />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip 
+                        formatter={(value, name) => {
+                          const labels = {
+                            totalQuantity: 'Total Units',
+                            thisMonth: 'This Month',
+                            lastMonth: 'Last Month'
+                          };
+                          return [value, labels[name] || name];
+                        }}
+                        labelFormatter={(label) => `Product: ${label}`}
+                      />
+                      <Legend 
+                        wrapperStyle={{ fontSize: '12px' }}
+                        formatter={(value) => {
+                          const labels = {
+                            totalQuantity: 'Total Units',
+                            thisMonth: 'This Month',
+                            lastMonth: 'Last Month'
+                          };
+                          return labels[value] || value;
+                        }}
+                      />
+                      <Bar dataKey="totalQuantity" fill="hsl(142 52% 45%)" name="totalQuantity" />
+                      <Bar dataKey="thisMonth" fill="hsl(176 48% 35%)" name="thisMonth" />
+                      <Bar dataKey="lastMonth" fill="hsl(38 92% 50%)" name="lastMonth" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">Top Products Details:</h4>
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {getMostOrderedProducts(3).map((product, index) => (
+                      <div key={index} className="flex items-center justify-between text-xs bg-muted p-2 rounded">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{product.name}</p>
+                          <p className="text-muted-foreground">#{index + 1} Most Ordered</p>
+                        </div>
+                        <div className="text-right space-y-1">
+                          <div className="flex gap-2 text-xs">
+                            <span className="text-accent">Total: {product.totalQuantity}</span>
+                          </div>
+                          <div className="flex gap-2 text-xs">
+                            <span className="text-primary">This: {product.thisMonth}</span>
+                            <span className="text-warning">Last: {product.lastMonth}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Least Ordered Products</CardTitle>
+            <TrendingDown className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex justify-center py-8">
+                <p className="text-sm text-muted-foreground">Loading...</p>
+              </div>
+            ) : productOrderData.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-muted-foreground">No order data available</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={getLeastOrderedProducts()} margin={{ top: 20, right: 30, left: 20, bottom: 80 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey="name" 
+                        tick={{ fontSize: 10 }}
+                        angle={-45}
+                        textAnchor="end"
+                        height={60}
+                      />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip 
+                        formatter={(value, name) => {
+                          const labels = {
+                            totalQuantity: 'Total Units',
+                            thisMonth: 'This Month',
+                            lastMonth: 'Last Month'
+                          };
+                          return [value, labels[name] || name];
+                        }}
+                        labelFormatter={(label) => `Product: ${label}`}
+                      />
+                      <Legend 
+                        wrapperStyle={{ fontSize: '12px' }}
+                        formatter={(value) => {
+                          const labels = {
+                            totalQuantity: 'Total Units',
+                            thisMonth: 'This Month',
+                            lastMonth: 'Last Month'
+                          };
+                          return labels[value] || value;
+                        }}
+                      />
+                      <Bar dataKey="totalQuantity" fill="hsl(0 84.2% 60.2%)" name="totalQuantity" />
+                      <Bar dataKey="thisMonth" fill="hsl(176 48% 35%)" name="thisMonth" />
+                      <Bar dataKey="lastMonth" fill="hsl(38 92% 50%)" name="lastMonth" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">Bottom Products Details:</h4>
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {getLeastOrderedProducts(3).map((product, index) => (
+                      <div key={index} className="flex items-center justify-between text-xs bg-muted p-2 rounded">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{product.name}</p>
+                          <p className="text-muted-foreground">#{index + 1} Least Ordered</p>
+                        </div>
+                        <div className="text-right space-y-1">
+                          <div className="flex gap-2 text-xs">
+                            <span className="text-destructive">Total: {product.totalQuantity}</span>
+                          </div>
+                          <div className="flex gap-2 text-xs">
+                            <span className="text-primary">This: {product.thisMonth}</span>
+                            <span className="text-warning">Last: {product.lastMonth}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Customer Cards */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg sm:text-xl">Outstanding Bills by Customer</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <p className="text-sm text-muted-foreground">Loading outstanding bills...</p>
+            </div>
+          ) : outstandingBills.length === 0 ? (
+            <div className="text-center py-8">
+              <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-sm text-muted-foreground">No outstanding bills found.</p>
+              <p className="text-xs text-muted-foreground mt-1">All bills are either paid or less than 15 days old.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {getCustomersWithOutstandingBills().map((customer) => (
+                <Card key={customer.id} className="border-l-4 border-l-orange-500">
+                  <CardContent className="p-4">
+                    <div className="flex flex-col lg:flex-row justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <User className="h-4 w-4 text-muted-foreground" />
+                          <h3 className="font-semibold text-lg">{customer.name}</h3>
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-2">
+                          Phone: {customer.phone}
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Total Outstanding</p>
+                            <p className="font-semibold text-lg text-orange-600">
+                              ₹{customer.total_outstanding.toLocaleString()}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Outstanding Bills</p>
+                            <p className="font-semibold text-lg text-red-600">
+                              {customer.bill_count}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Customer Balance</p>
+                            <p className="font-semibold text-lg text-blue-600">
+                              ₹{customer.outstanding_balance.toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="lg:border-l lg:pl-4">
+                        <h4 className="font-medium text-sm text-muted-foreground mb-2">Overdue Bills:</h4>
+                        <div className="space-y-2 max-h-32 overflow-y-auto">
+                          {customer.bills.map((bill) => (
+                            <div key={bill.id} className="flex items-center justify-between text-sm bg-muted p-2 rounded">
+                              <div>
+                                <p className="font-medium">{bill.invoice_number}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {new Date(bill.date_of_bill).toLocaleDateString()}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-medium text-orange-600">
+                                  ₹{bill.outstanding_amount.toLocaleString()}
+                                </p>
+                                <p className="text-xs text-red-600">
+                                  {bill.days_overdue} days overdue
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
 export const Admin = () => {
   // The ProtectedRoute component already ensures that only admins can access this page.
   // No need for a separate loading or access check here.
@@ -846,59 +1383,98 @@ export const Admin = () => {
         </p>
       </div>
       
-      <Tabs defaultValue="products" className="w-full">
-        <TabsList className="grid w-full grid-cols-5 h-auto p-1">
+      <Tabs defaultValue="seller" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 h-auto p-1">
           <TabsTrigger
-            value="products"
-            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+            value="seller"
+            className="text-sm sm:text-base px-4 sm:px-6 py-3 data-[state=active]:bg-background"
           >
-            <span className="hidden sm:inline">Products</span>
-            <span className="sm:hidden">Products</span>
+            <Building className="h-4 w-4 mr-2" />
+            Seller Management
           </TabsTrigger>
           <TabsTrigger
-            value="seller-info"
-            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+            value="admin-tools"
+            className="text-sm sm:text-base px-4 sm:px-6 py-3 data-[state=active]:bg-background"
           >
-            <span className="hidden sm:inline">Seller Info</span>
-            <span className="sm:hidden">Seller</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="expense-categories"
-            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
-          >
-            <span className="hidden sm:inline">Expense Categories</span>
-            <span className="sm:hidden">Categories</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="user-management"
-            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
-          >
-            <span className="hidden sm:inline">User Management</span>
-            <span className="sm:hidden">Users</span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="export"
-            className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
-          >
-            <span className="hidden sm:inline">Export</span>
-            <span className="sm:hidden">Export</span>
+            <Edit className="h-4 w-4 mr-2" />
+            Admin Tools
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="products" className="mt-4 sm:mt-6">
-          <Products />
+        <TabsContent value="seller" className="mt-4 sm:mt-6">
+          <Tabs defaultValue="products" className="w-full">
+            <TabsList className="grid w-full grid-cols-3 h-auto p-1">
+              <TabsTrigger
+                value="products"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">Products</span>
+                <span className="sm:hidden">Products</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="seller-info"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">Seller Info</span>
+                <span className="sm:hidden">Seller</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="expense-categories"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">Expense Categories</span>
+                <span className="sm:hidden">Categories</span>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="products" className="mt-4 sm:mt-6">
+              <Products />
+            </TabsContent>
+            <TabsContent value="seller-info" className="mt-4 sm:mt-6">
+              <SellerInfoManager />
+            </TabsContent>
+            <TabsContent value="expense-categories" className="mt-4 sm:mt-6">
+              <ExpenseCategoryManager />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
-        <TabsContent value="seller-info" className="mt-4 sm:mt-6">
-          <SellerInfoManager />
-        </TabsContent>
-        <TabsContent value="expense-categories" className="mt-4 sm:mt-6">
-          <ExpenseCategoryManager />
-        </TabsContent>
-        <TabsContent value="user-management" className="mt-4 sm:mt-6">
-          <UserManagement />
-        </TabsContent>
-        <TabsContent value="export" className="mt-4 sm:mt-6">
-          <DatabaseExportManager />
+
+        <TabsContent value="admin-tools" className="mt-4 sm:mt-6">
+          <Tabs defaultValue="insights" className="w-full">
+            <TabsList className="grid w-full grid-cols-3 h-auto p-1">
+              <TabsTrigger
+                value="insights"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">Insights</span>
+                <span className="sm:hidden">Insights</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="user-management"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">User Management</span>
+                <span className="sm:hidden">Users</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="export"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">Export</span>
+                <span className="sm:hidden">Export</span>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="insights" className="mt-4 sm:mt-6">
+              <InsightsManager />
+            </TabsContent>
+            <TabsContent value="user-management" className="mt-4 sm:mt-6">
+              <UserManagement />
+            </TabsContent>
+            <TabsContent value="export" className="mt-4 sm:mt-6">
+              <DatabaseExportManager />
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
     </div>
