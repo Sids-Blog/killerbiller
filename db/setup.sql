@@ -5,6 +5,7 @@
 DROP TABLE IF EXISTS public.user_roles CASCADE;
 DROP TABLE IF EXISTS public.users CASCADE;
 DROP TABLE IF EXISTS public.roles CASCADE;
+DROP TABLE IF EXISTS public.product_vendors CASCADE;
 DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
 DROP FUNCTION IF EXISTS get_users_with_roles();
 
@@ -138,6 +139,13 @@ CREATE TABLE IF NOT EXISTS public.damaged_stock_log (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT damaged_stock_log_pkey PRIMARY KEY (id),
     CONSTRAINT damaged_stock_log_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE
+);
+
+-- Create Product Vendors table (mapping products to suppliers/vendors)
+CREATE TABLE IF NOT EXISTS public.product_vendors (
+  product_id UUID NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+  vendor_id UUID NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
+  PRIMARY KEY (product_id, vendor_id)
 );
 
 -- Create Credit table
@@ -557,6 +565,7 @@ ALTER TABLE inventory_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE expense_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.damaged_stock_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.product_vendors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
@@ -587,6 +596,8 @@ DROP POLICY IF EXISTS "Allow all access to all users" ON transactions;
 CREATE POLICY "Allow all access to all users" ON transactions FOR ALL USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Allow public access to all users" ON public.damaged_stock_log;
 CREATE POLICY "Allow public access to all users" ON public.damaged_stock_log FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow all access to all users" ON public.product_vendors;
+CREATE POLICY "Allow all access to all users" ON public.product_vendors FOR ALL USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Allow all access to all users" ON roles;
 CREATE POLICY "Allow all access to all users" ON roles FOR ALL USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Allow all access to all users" ON user_roles;
@@ -613,6 +624,8 @@ CREATE INDEX IF NOT EXISTS idx_transactions_vendor_id ON transactions(vendor_id)
 CREATE INDEX IF NOT EXISTS idx_transactions_category_id ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_customer_id ON transactions(customer_id);
 CREATE INDEX IF NOT EXISTS idx_seller_info_company_name ON seller_info(company_name);
+CREATE INDEX IF NOT EXISTS idx_product_vendors_product_id ON public.product_vendors(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_vendors_vendor_id ON public.product_vendors(vendor_id);
 
 
 -- === TRIGGERS ===
