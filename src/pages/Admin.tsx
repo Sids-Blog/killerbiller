@@ -972,15 +972,19 @@ const InsightsManager = () => {
       const productMap = new Map();
       
       data?.forEach(item => {
-        if (item.products && item.orders) {
+        // Type check: products and orders should be objects, not arrays
+        const products = Array.isArray(item.products) ? item.products[0] : item.products;
+        const orders = Array.isArray(item.orders) ? item.orders[0] : item.orders;
+        
+        if (products && orders) {
           const productId = item.product_id;
-          const lotSize = item.products.lot_size || 1;
+          const lotSize = products.lot_size || 1;
           const totalQuantity = (item.lots * lotSize) + item.units;
-          const orderDate = new Date(item.orders.created_at);
+          const orderDate = new Date(orders.created_at);
           
           if (!productMap.has(productId)) {
             productMap.set(productId, {
-              name: item.products.name,
+              name: products.name,
               totalQuantity: 0,
               thisMonth: 0,
               lastMonth: 0,
