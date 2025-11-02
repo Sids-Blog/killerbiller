@@ -43,6 +43,7 @@ import { exportToCSV, formatCurrency, formatDateTime } from "@/lib/csv-export";
 // Interfaces
 interface Bill {
   id: string;
+  invoice_number: string | null;
   total_amount: number;
   due_date: string;
   status: "outstanding" | "partial" | "paid";
@@ -470,7 +471,7 @@ export const Payments = () => {
               <div className="space-y-2">
                 <Label>Outstanding Bills</Label>
                 {customerBills.length > 0 ? (
-                  <div className="space-y-2 rounded-md border p-4 max-h-48 overflow-y-auto">{customerBills.map((bill) => (<div key={bill.id} className="flex items-center justify-between"><div className="flex items-center gap-2"><Checkbox id={`bill-${bill.id}`} checked={selectedBills.includes(bill.id)} onCheckedChange={(checked) => {setSelectedBills(checked ? [...selectedBills, bill.id] : selectedBills.filter((id) => id !== bill.id));}} /><Label htmlFor={`bill-${bill.id}`} className="font-normal">Bill #{bill.id.substring(0, 6)} - Due: {new Date(bill.due_date).toLocaleDateString()}</Label></div><Badge variant={bill.status === 'partial' ? 'secondary' : 'outline'}>Rs. {(bill.total_amount - bill.paid_amount).toFixed(2)}</Badge></div>))}</div>
+                  <div className="space-y-2 rounded-md border p-4 max-h-48 overflow-y-auto">{customerBills.map((bill) => (<div key={bill.id} className="flex items-center justify-between"><div className="flex items-center gap-2"><Checkbox id={`bill-${bill.id}`} checked={selectedBills.includes(bill.id)} onCheckedChange={(checked) => {setSelectedBills(checked ? [...selectedBills, bill.id] : selectedBills.filter((id) => id !== bill.id));}} /><Label htmlFor={`bill-${bill.id}`} className="font-normal">{bill.invoice_number || `#${bill.id.substring(0, 6)}`} - Due: {new Date(bill.due_date).toLocaleDateString()}</Label></div><Badge variant={bill.status === 'partial' ? 'secondary' : 'outline'}>Rs. {(bill.total_amount - bill.paid_amount).toFixed(2)}</Badge></div>))}</div>
                 ) : (
                   <div className="rounded-md border p-4 text-center"><p className="text-sm text-muted-foreground">No outstanding bills for this customer.</p></div>
                 )}

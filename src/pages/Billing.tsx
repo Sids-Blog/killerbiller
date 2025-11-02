@@ -119,9 +119,18 @@ export const Billing = () => {
   const [orderId, setOrderId] = useState<string | null>(null);
   const [billDate, setBillDate] = useState<Date | undefined>(new Date());
   const [isGstBill, setIsGstBill] = useState(false);
-  const [sgstPercent, setSgstPercent] = useState(14);
-  const [cgstPercent, setCgstPercent] = useState(14);
-  const [cessPercent, setCessPercent] = useState(12);
+  const [sgstPercent, setSgstPercent] = useState(() => {
+    const saved = localStorage.getItem('default_sgst_percentage');
+    return saved ? parseFloat(saved) : 14;
+  });
+  const [cgstPercent, setCgstPercent] = useState(() => {
+    const saved = localStorage.getItem('default_cgst_percentage');
+    return saved ? parseFloat(saved) : 14;
+  });
+  const [cessPercent, setCessPercent] = useState(() => {
+    const saved = localStorage.getItem('default_cess_percentage');
+    return saved ? parseFloat(saved) : 0;
+  });
 
   // Shared states
   const [customers, setCustomers] = useState<Customer[]>([]);

@@ -41,6 +41,102 @@ interface SellerInfo {
   updated_at: string;
 }
 
+const GSTSettingsManager = () => {
+  const { toast } = useToast();
+  const [sgstPercent, setSgstPercent] = useState(14);
+  const [cgstPercent, setCgstPercent] = useState(14);
+  const [cessPercent, setCessPercent] = useState(0);
+
+  useEffect(() => {
+    // Load from localStorage on mount
+    const savedSgst = localStorage.getItem('default_sgst_percentage');
+    const savedCgst = localStorage.getItem('default_cgst_percentage');
+    const savedCess = localStorage.getItem('default_cess_percentage');
+    
+    if (savedSgst) setSgstPercent(parseFloat(savedSgst));
+    if (savedCgst) setCgstPercent(parseFloat(savedCgst));
+    if (savedCess) setCessPercent(parseFloat(savedCess));
+  }, []);
+
+  const saveSettings = () => {
+    localStorage.setItem('default_sgst_percentage', sgstPercent.toString());
+    localStorage.setItem('default_cgst_percentage', cgstPercent.toString());
+    localStorage.setItem('default_cess_percentage', cessPercent.toString());
+    toast({ title: "Success", description: "Default GST rates saved successfully." });
+  };
+
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
+        <p className="text-muted-foreground text-sm sm:text-base">
+          Set default GST rates that will be used when creating new bills. You can still override them per bill.
+        </p>
+      </div>
+      
+      <Card>
+        <CardHeader className="pb-3 sm:pb-6">
+          <CardTitle className="text-lg sm:text-xl">Default GST Rates</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="sgst" className="text-sm font-medium">SGST (%)</Label>
+                <Input 
+                  id="sgst"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={sgstPercent}
+                  onChange={(e) => setSgstPercent(parseFloat(e.target.value) || 0)}
+                  placeholder="14.00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cgst" className="text-sm font-medium">CGST (%)</Label>
+                <Input 
+                  id="cgst"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={cgstPercent}
+                  onChange={(e) => setCgstPercent(parseFloat(e.target.value) || 0)}
+                  placeholder="14.00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cess" className="text-sm font-medium">CESS (%)</Label>
+                <Input 
+                  id="cess"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={cessPercent}
+                  onChange={(e) => setCessPercent(parseFloat(e.target.value) || 0)}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end pt-4">
+              <Button onClick={saveSettings} size="sm">
+                Save Settings
+              </Button>
+            </div>
+            <div className="mt-4 p-4 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">
+                <strong>Current Settings:</strong> SGST: {sgstPercent}%, CGST: {cgstPercent}%, CESS: {cessPercent}%
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
 const ExpenseCategoryManager = () => {
   const { toast } = useToast();
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
@@ -1403,7 +1499,7 @@ export const Admin = () => {
 
         <TabsContent value="seller" className="mt-4 sm:mt-6">
           <Tabs defaultValue="products" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 h-auto p-1">
+            <TabsList className="grid w-full grid-cols-4 h-auto p-1">
               <TabsTrigger
                 value="products"
                 className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
@@ -1419,6 +1515,13 @@ export const Admin = () => {
                 <span className="sm:hidden">Seller</span>
               </TabsTrigger>
               <TabsTrigger
+                value="gst-settings"
+                className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
+              >
+                <span className="hidden sm:inline">GST Settings</span>
+                <span className="sm:hidden">GST</span>
+              </TabsTrigger>
+              <TabsTrigger
                 value="expense-categories"
                 className="text-xs sm:text-sm px-2 sm:px-4 py-2 data-[state=active]:bg-background"
               >
@@ -1432,6 +1535,9 @@ export const Admin = () => {
             </TabsContent>
             <TabsContent value="seller-info" className="mt-4 sm:mt-6">
               <SellerInfoManager />
+            </TabsContent>
+            <TabsContent value="gst-settings" className="mt-4 sm:mt-6">
+              <GSTSettingsManager />
             </TabsContent>
             <TabsContent value="expense-categories" className="mt-4 sm:mt-6">
               <ExpenseCategoryManager />
