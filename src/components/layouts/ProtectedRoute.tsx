@@ -11,21 +11,22 @@ const routePermissions: Record<string, string[]> = {
   '/payments': ['admin', 'manager'],
   '/customers': ['admin', 'manager'],
   '/damaged-stock': ['admin', 'manager'],
-  '/admin': ['admin'],
+  '/financial-analytics': ['admin', 'manager'],
+  '/admin': ['admin', 'manager'], // Allow both admin and manager for Financial Analytics access
 };
 
 export function ProtectedRoute() {
   const { session, loading, role } = useAuth();
   const location = useLocation();
 
-  
-if (loading) {
-  return (
-    <div className="flex items-center justify-center h-screen">
-      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-    </div>
-  );
-}
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!session) {
     return <Navigate to="/" replace />;

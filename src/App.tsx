@@ -12,6 +12,7 @@ import { Orders } from "./pages/Orders";
 import NotFound from "./pages/NotFound";
 import { Admin } from "./pages/Admin";
 import { DamagedStock } from "./pages/DamagedStock";
+import { FinancialAnalytics } from "./pages/FinancialAnalytics";
 import { AuthPage } from "./pages/AuthPage";
 import { ProtectedRoute } from "./components/layouts/ProtectedRoute";
 import { Index } from "./pages/Index";
@@ -36,6 +37,7 @@ const App = () => {
               <Route path="/customers" element={<Customers />} />
               <Route path="/orders" element={<Orders />} />
               <Route path="/damaged-stock" element={<DamagedStock />} />
+              <Route path="/financial-analytics" element={<FinancialAnalytics />} />
               <Route path="/admin" element={<Admin />} />
             </Route>
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

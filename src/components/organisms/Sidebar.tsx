@@ -11,6 +11,7 @@ import {
   ShoppingCart,
   Trash2,
   LogOut,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,7 +32,8 @@ const allNavigation = [
   { name: "Payments", href: "/payments", icon: CreditCard, roles: ['admin', 'manager'] },
   { name: "Customers", href: "/customers", icon: Users, roles: ['admin', 'manager'] },
   { name: "Damaged Stock", href: "/damaged-stock", icon: Trash2, roles: ['admin', 'manager'] },
-  { name: "Admin", href: "/admin", icon: Home, roles: ['admin'] },
+  { name: "Financial Analytics", href: "/financial-analytics", icon: TrendingUp, roles: ['admin', 'manager'] },
+  { name: "Admin", href: "/admin", icon: Home, roles: ['admin', 'manager'] },
 ];
 
 interface SidebarProps {
@@ -51,14 +53,14 @@ export const Sidebar = ({
   const { role } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+
   // Debug: Log the current role and navigation
   console.log('Sidebar - Current role:', role);
   console.log('Sidebar - All navigation items:', allNavigation);
 
   // If no role is assigned, show all navigation items (fallback)
   let navigation = role ? allNavigation.filter(item => item.roles.includes(role)) : allNavigation;
-  
+
   // Fallback: if no navigation items are found, show at least basic items
   if (navigation.length === 0) {
     console.warn('No navigation items found for role:', role, 'showing fallback navigation');

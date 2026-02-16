@@ -52,7 +52,7 @@ const GSTSettingsManager = () => {
     const savedSgst = localStorage.getItem('default_sgst_percentage');
     const savedCgst = localStorage.getItem('default_cgst_percentage');
     const savedCess = localStorage.getItem('default_cess_percentage');
-    
+
     if (savedSgst) setSgstPercent(parseFloat(savedSgst));
     if (savedCgst) setCgstPercent(parseFloat(savedCgst));
     if (savedCess) setCessPercent(parseFloat(savedCess));
@@ -72,7 +72,7 @@ const GSTSettingsManager = () => {
           Set default GST rates that will be used when creating new bills. You can still override them per bill.
         </p>
       </div>
-      
+
       <Card>
         <CardHeader className="pb-3 sm:pb-6">
           <CardTitle className="text-lg sm:text-xl">Default GST Rates</CardTitle>
@@ -82,7 +82,7 @@ const GSTSettingsManager = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="sgst" className="text-sm font-medium">SGST (%)</Label>
-                <Input 
+                <Input
                   id="sgst"
                   type="number"
                   min="0"
@@ -95,7 +95,7 @@ const GSTSettingsManager = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="cgst" className="text-sm font-medium">CGST (%)</Label>
-                <Input 
+                <Input
                   id="cgst"
                   type="number"
                   min="0"
@@ -108,7 +108,7 @@ const GSTSettingsManager = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="cess" className="text-sm font-medium">CESS (%)</Label>
-                <Input 
+                <Input
                   id="cess"
                   type="number"
                   min="0"
@@ -212,7 +212,7 @@ const ExpenseCategoryManager = () => {
         <p className="text-muted-foreground text-sm sm:text-base">Manage expense categories for tracking payments.</p>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button 
+            <Button
               onClick={() => openDialog()}
               className="w-full sm:w-auto text-sm"
               size="sm"
@@ -229,24 +229,24 @@ const ExpenseCategoryManager = () => {
             </DialogHeader>
             <div className="py-4 space-y-3">
               <Label htmlFor="categoryName" className="text-sm font-medium">Category Name</Label>
-              <Input 
-                id="categoryName" 
-                value={categoryName} 
+              <Input
+                id="categoryName"
+                value={categoryName}
                 onChange={(e) => setCategoryName(e.target.value)}
                 className="text-sm"
                 placeholder="Enter category name"
               />
             </div>
             <div className="flex flex-col sm:flex-row justify-end gap-2">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setIsDialogOpen(false)}
                 className="w-full sm:w-auto text-sm"
                 size="sm"
               >
                 Cancel
               </Button>
-              <Button 
+              <Button
                 onClick={saveCategory}
                 className="w-full sm:w-auto text-sm"
                 size="sm"
@@ -257,7 +257,7 @@ const ExpenseCategoryManager = () => {
           </DialogContent>
         </Dialog>
       </div>
-      
+
       <Card>
         <CardHeader className="pb-3 sm:pb-6">
           <CardTitle className="text-lg sm:text-xl">Expense Categories</CardTitle>
@@ -277,17 +277,17 @@ const ExpenseCategoryManager = () => {
                 <div key={cat.id} className="flex justify-between items-center p-3 sm:p-4 bg-muted rounded-lg">
                   <span className="font-medium text-sm sm:text-base truncate pr-2">{cat.name}</span>
                   <div className="flex gap-1 sm:gap-2 flex-shrink-0">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => openDialog(cat)}
                       className="h-8 w-8 sm:h-9 sm:w-9"
                     >
                       <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
                     </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => deleteCategory(cat.id)}
                       className="h-8 w-8 sm:h-9 sm:w-9 text-destructive hover:text-destructive"
                     >
@@ -358,10 +358,10 @@ const SellerInfoManager = () => {
   const saveSellerInfo = async () => {
     // Validate required fields (only company name, email, and contact number)
     if (!formData.company_name || !formData.email || !formData.contact_number) {
-      toast({ 
-        title: "Error", 
-        description: "Please fill in Company Name, Email, and Contact Number.", 
-        variant: "destructive" 
+      toast({
+        title: "Error",
+        description: "Please fill in Company Name, Email, and Contact Number.",
+        variant: "destructive"
       });
       return;
     }
@@ -369,10 +369,10 @@ const SellerInfoManager = () => {
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
-      toast({ 
-        title: "Error", 
-        description: "Please enter a valid email address.", 
-        variant: "destructive" 
+      toast({
+        title: "Error",
+        description: "Please enter a valid email address.",
+        variant: "destructive"
       });
       return;
     }
@@ -394,10 +394,10 @@ const SellerInfoManager = () => {
       if (error) {
         // If there's a constraint violation, it means a record already exists
         if (error.code === '23505') {
-          toast({ 
-            title: "Error", 
-            description: "Seller information already exists. Please refresh the page.", 
-            variant: "destructive" 
+          toast({
+            title: "Error",
+            description: "Seller information already exists. Please refresh the page.",
+            variant: "destructive"
           });
           fetchSellerInfo(); // Refresh to get the existing record
         } else {
@@ -423,7 +423,7 @@ const SellerInfoManager = () => {
         </p>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button 
+            <Button
               onClick={openDialog}
               className="w-full sm:w-auto text-sm"
               size="sm"
@@ -442,29 +442,29 @@ const SellerInfoManager = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="company_name" className="text-sm font-medium">Company Name *</Label>
-                  <Input 
-                    id="company_name" 
-                    value={formData.company_name} 
+                  <Input
+                    id="company_name"
+                    value={formData.company_name}
                     onChange={(e) => handleInputChange('company_name', e.target.value)}
                     placeholder="Enter company name"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="contact_number" className="text-sm font-medium">Contact Number *</Label>
-                  <Input 
-                    id="contact_number" 
-                    value={formData.contact_number} 
+                  <Input
+                    id="contact_number"
+                    value={formData.contact_number}
                     onChange={(e) => handleInputChange('contact_number', e.target.value)}
                     placeholder="Enter contact number"
                   />
                 </div>
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="address" className="text-sm font-medium">Address</Label>
-                <Textarea 
-                  id="address" 
-                  value={formData.address} 
+                <Textarea
+                  id="address"
+                  value={formData.address}
                   onChange={(e) => handleInputChange('address', e.target.value)}
                   placeholder="Enter complete address (optional)"
                   rows={3}
@@ -474,19 +474,19 @@ const SellerInfoManager = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="gst_number" className="text-sm font-medium">GST Number</Label>
-                  <Input 
-                    id="gst_number" 
-                    value={formData.gst_number} 
+                  <Input
+                    id="gst_number"
+                    value={formData.gst_number}
                     onChange={(e) => handleInputChange('gst_number', e.target.value)}
                     placeholder="Enter GST number (optional)"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-sm font-medium">Email *</Label>
-                  <Input 
-                    id="email" 
+                  <Input
+                    id="email"
                     type="email"
-                    value={formData.email} 
+                    value={formData.email}
                     onChange={(e) => handleInputChange('email', e.target.value)}
                     placeholder="Enter email address"
                   />
@@ -496,18 +496,18 @@ const SellerInfoManager = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="bank_account_number" className="text-sm font-medium">Bank Account Number</Label>
-                  <Input 
-                    id="bank_account_number" 
-                    value={formData.bank_account_number} 
+                  <Input
+                    id="bank_account_number"
+                    value={formData.bank_account_number}
                     onChange={(e) => handleInputChange('bank_account_number', e.target.value)}
                     placeholder="Enter bank account number (optional)"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="account_holder_name" className="text-sm font-medium">Account Holder Name</Label>
-                  <Input 
-                    id="account_holder_name" 
-                    value={formData.account_holder_name} 
+                  <Input
+                    id="account_holder_name"
+                    value={formData.account_holder_name}
                     onChange={(e) => handleInputChange('account_holder_name', e.target.value)}
                     placeholder="Enter account holder name (optional)"
                   />
@@ -517,27 +517,27 @@ const SellerInfoManager = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="account_no" className="text-sm font-medium">Account No</Label>
-                  <Input 
-                    id="account_no" 
-                    value={formData.account_no} 
+                  <Input
+                    id="account_no"
+                    value={formData.account_no}
                     onChange={(e) => handleInputChange('account_no', e.target.value)}
                     placeholder="Enter account number (optional)"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="branch" className="text-sm font-medium">Branch</Label>
-                  <Input 
-                    id="branch" 
-                    value={formData.branch} 
+                  <Input
+                    id="branch"
+                    value={formData.branch}
                     onChange={(e) => handleInputChange('branch', e.target.value)}
                     placeholder="Enter branch name (optional)"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="ifsc_code" className="text-sm font-medium">IFSC Code</Label>
-                  <Input 
-                    id="ifsc_code" 
-                    value={formData.ifsc_code} 
+                  <Input
+                    id="ifsc_code"
+                    value={formData.ifsc_code}
                     onChange={(e) => handleInputChange('ifsc_code', e.target.value)}
                     placeholder="Enter IFSC code (optional)"
                   />
@@ -545,15 +545,15 @@ const SellerInfoManager = () => {
               </div>
             </div>
             <div className="flex flex-col sm:flex-row justify-end gap-2">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setIsDialogOpen(false)}
                 className="w-full sm:w-auto text-sm"
                 size="sm"
               >
                 Cancel
               </Button>
-              <Button 
+              <Button
                 onClick={saveSellerInfo}
                 className="w-full sm:w-auto text-sm"
                 size="sm"
@@ -564,7 +564,7 @@ const SellerInfoManager = () => {
           </DialogContent>
         </Dialog>
       </div>
-      
+
       <Card>
         <CardHeader className="pb-3 sm:pb-6">
           <CardTitle className="text-lg sm:text-xl">Seller Information</CardTitle>
@@ -595,7 +595,7 @@ const SellerInfoManager = () => {
                   <p className="text-sm">{sellerInfo.contact_number}</p>
                 </div>
               </div>
-              
+
               <div>
                 <h3 className="font-semibold text-sm text-muted-foreground">Address</h3>
                 <p className="text-sm">{sellerInfo.address}</p>
@@ -689,7 +689,7 @@ SET session_replication_role = replica;
       for (const tableName of tables) {
         try {
           const { data, error } = await supabase.from(tableName).select('*');
-          
+
           if (error) {
             console.warn(`Failed to export table ${tableName}:`, error.message);
             continue;
@@ -698,7 +698,7 @@ SET session_replication_role = replica;
           if (data && data.length > 0) {
             sqlContent += `-- Table: ${tableName}\n`;
             sqlContent += `DELETE FROM ${tableName};\n`;
-            
+
             for (const row of data) {
               const columns = Object.keys(row);
               const values = columns.map(col => {
@@ -718,7 +718,7 @@ SET session_replication_role = replica;
                 }
                 return value;
               });
-              
+
               sqlContent += `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${values.join(', ')});\n`;
             }
             sqlContent += '\n';
@@ -738,11 +738,11 @@ SET session_replication_role = replica;
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      
+
       // Generate filename with current date
       const today = new Date().toISOString().split('T')[0];
       link.download = `database_backup_${today}.sql`;
-      
+
       // Trigger download
       document.body.appendChild(link);
       link.click();
@@ -771,11 +771,11 @@ SET session_replication_role = replica;
     try {
       // Create a new workbook
       const workbook = new XLSX.Workbook();
-      
+
       // Define all tables to export
       const tables = [
         'customers',
-        'products', 
+        'products',
         'inventory',
         'bills',
         'bill_items',
@@ -795,7 +795,7 @@ SET session_replication_role = replica;
       for (const tableName of tables) {
         try {
           const { data, error } = await supabase.from(tableName).select('*');
-          
+
           if (error) {
             console.warn(`Failed to export table ${tableName}:`, error.message);
             continue;
@@ -804,13 +804,13 @@ SET session_replication_role = replica;
           if (data && data.length > 0) {
             // Create worksheet
             const worksheet = workbook.addWorksheet(tableName);
-            
+
             // Get column headers from the first row
             const headers = Object.keys(data[0]);
-            
+
             // Add headers
             worksheet.addRow(headers);
-            
+
             // Add data rows
             data.forEach(row => {
               const values = headers.map(header => {
@@ -822,7 +822,7 @@ SET session_replication_role = replica;
               });
               worksheet.addRow(values);
             });
-            
+
             // Style the header row
             const headerRow = worksheet.getRow(1);
             headerRow.font = { bold: true };
@@ -831,7 +831,7 @@ SET session_replication_role = replica;
               pattern: 'solid',
               fgColor: { argb: 'FFE6E6FA' }
             };
-            
+
             // Auto-fit columns
             worksheet.columns.forEach(column => {
               column.width = 15;
@@ -845,19 +845,19 @@ SET session_replication_role = replica;
 
       // Generate Excel file
       const buffer = await workbook.xlsx.writeBuffer();
-      
+
       // Create download link
-      const blob = new Blob([buffer], { 
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      
+
       // Generate filename with current date
       const today = new Date().toISOString().split('T')[0];
       link.download = `database_export_${today}.xlsx`;
-      
+
       // Trigger download
       document.body.appendChild(link);
       link.click();
@@ -888,7 +888,7 @@ SET session_replication_role = replica;
           Export all database tables to an Excel file for backup or analysis.
         </p>
       </div>
-      
+
       <Card>
         <CardHeader className="pb-3 sm:pb-6">
           <CardTitle className="text-lg sm:text-xl">Database Export</CardTitle>
@@ -900,8 +900,8 @@ SET session_replication_role = replica;
               Choose your preferred backup format for the complete database.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button 
-                onClick={exportDatabase} 
+              <Button
+                onClick={exportDatabase}
                 disabled={loading}
                 className="gap-2"
                 variant="default"
@@ -909,8 +909,8 @@ SET session_replication_role = replica;
                 <Download className="h-4 w-4" />
                 {loading ? "Exporting..." : "Export as Excel"}
               </Button>
-              <Button 
-                onClick={exportToSQL} 
+              <Button
+                onClick={exportToSQL}
                 disabled={loading}
                 className="gap-2"
                 variant="outline"
@@ -954,10 +954,10 @@ const InsightsManager = () => {
         `);
 
       if (error) {
-        toast({ 
-          title: "Error fetching product data", 
-          description: error.message, 
-          variant: "destructive" 
+        toast({
+          title: "Error fetching product data",
+          description: error.message,
+          variant: "destructive"
         });
         return;
       }
@@ -970,18 +970,18 @@ const InsightsManager = () => {
 
       // Calculate quantities per product with time periods
       const productMap = new Map();
-      
+
       data?.forEach(item => {
         // Type check: products and orders should be objects, not arrays
         const products = Array.isArray(item.products) ? item.products[0] : item.products;
         const orders = Array.isArray(item.orders) ? item.orders[0] : item.orders;
-        
+
         if (products && orders) {
           const productId = item.product_id;
           const lotSize = products.lot_size || 1;
           const totalQuantity = (item.lots * lotSize) + item.units;
           const orderDate = new Date(orders.created_at);
-          
+
           if (!productMap.has(productId)) {
             productMap.set(productId, {
               name: products.name,
@@ -991,16 +991,16 @@ const InsightsManager = () => {
               orderCount: 0
             });
           }
-          
+
           const product = productMap.get(productId);
           product.totalQuantity += totalQuantity;
           product.orderCount += 1;
-          
+
           // Check if order is from this month
           if (orderDate >= thisMonthStart) {
             product.thisMonth += totalQuantity;
           }
-          
+
           // Check if order is from last month
           if (orderDate >= lastMonthStart && orderDate <= lastMonthEnd) {
             product.lastMonth += totalQuantity;
@@ -1010,13 +1010,13 @@ const InsightsManager = () => {
 
       const productArray = Array.from(productMap.values())
         .sort((a, b) => b.totalQuantity - a.totalQuantity);
-      
+
       setProductOrderData(productArray);
     } catch (error) {
-      toast({ 
-        title: "Error", 
-        description: "Failed to fetch product order data", 
-        variant: "destructive" 
+      toast({
+        title: "Error",
+        description: "Failed to fetch product order data",
+        variant: "destructive"
       });
     }
   }, [toast]);
@@ -1026,7 +1026,7 @@ const InsightsManager = () => {
       // Get bills that are outstanding for more than 15 days
       const fifteenDaysAgo = new Date();
       fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
-      
+
       const { data, error } = await supabase
         .from('bills')
         .select(`
@@ -1049,19 +1049,19 @@ const InsightsManager = () => {
         .order('date_of_bill', { ascending: true });
 
       if (error) {
-        toast({ 
-          title: "Error fetching outstanding bills", 
-          description: error.message, 
-          variant: "destructive" 
+        toast({
+          title: "Error fetching outstanding bills",
+          description: error.message,
+          variant: "destructive"
         });
       } else {
         setOutstandingBills(data || []);
       }
     } catch (error) {
-      toast({ 
-        title: "Error", 
-        description: "Failed to fetch outstanding bills", 
-        variant: "destructive" 
+      toast({
+        title: "Error",
+        description: "Failed to fetch outstanding bills",
+        variant: "destructive"
       });
     }
   }, [toast]);
@@ -1102,7 +1102,7 @@ const InsightsManager = () => {
 
   const getCustomersWithOutstandingBills = () => {
     const customerMap = new Map();
-    
+
     outstandingBills.forEach(bill => {
       if (bill.customers) {
         const customerId = bill.customers.id;
@@ -1117,10 +1117,10 @@ const InsightsManager = () => {
             bill_count: 0
           });
         }
-        
+
         const customer = customerMap.get(customerId);
         const outstandingAmount = getOutstandingAmount(bill.total_amount, bill.paid_amount);
-        
+
         customer.bills.push({
           id: bill.id,
           invoice_number: bill.invoice_number,
@@ -1130,12 +1130,12 @@ const InsightsManager = () => {
           outstanding_amount: outstandingAmount,
           days_overdue: getDaysOverdue(bill.date_of_bill)
         });
-        
+
         customer.total_outstanding += outstandingAmount;
         customer.bill_count += 1;
       }
     });
-    
+
     return Array.from(customerMap.values()).sort((a, b) => b.total_outstanding - a.total_outstanding);
   };
 
@@ -1153,7 +1153,7 @@ const InsightsManager = () => {
         <p className="text-muted-foreground text-sm sm:text-base">
           Monitor outstanding bills and customer payment status for better cash flow management.
         </p>
-        <Button 
+        <Button
           onClick={async () => {
             setLoading(true);
             await Promise.all([
@@ -1236,15 +1236,15 @@ const InsightsManager = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={getMostOrderedProducts()} margin={{ top: 20, right: 30, left: 20, bottom: 80 }}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="name" 
+                      <XAxis
+                        dataKey="name"
                         tick={{ fontSize: 10 }}
                         angle={-45}
                         textAnchor="end"
                         height={60}
                       />
                       <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip 
+                      <Tooltip
                         formatter={(value, name) => {
                           const labels = {
                             totalQuantity: 'Total Units',
@@ -1255,7 +1255,7 @@ const InsightsManager = () => {
                         }}
                         labelFormatter={(label) => `Product: ${label}`}
                       />
-                      <Legend 
+                      <Legend
                         wrapperStyle={{ fontSize: '12px' }}
                         formatter={(value) => {
                           const labels = {
@@ -1319,15 +1319,15 @@ const InsightsManager = () => {
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={getLeastOrderedProducts()} margin={{ top: 20, right: 30, left: 20, bottom: 80 }}>
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="name" 
+                      <XAxis
+                        dataKey="name"
                         tick={{ fontSize: 10 }}
                         angle={-45}
                         textAnchor="end"
                         height={60}
                       />
                       <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip 
+                      <Tooltip
                         formatter={(value, name) => {
                           const labels = {
                             totalQuantity: 'Total Units',
@@ -1338,7 +1338,7 @@ const InsightsManager = () => {
                         }}
                         labelFormatter={(label) => `Product: ${label}`}
                       />
-                      <Legend 
+                      <Legend
                         wrapperStyle={{ fontSize: '12px' }}
                         formatter={(value) => {
                           const labels = {
@@ -1434,7 +1434,7 @@ const InsightsManager = () => {
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="lg:border-l lg:pl-4">
                         <h4 className="font-medium text-sm text-muted-foreground mb-2">Overdue Bills:</h4>
                         <div className="space-y-2 max-h-32 overflow-y-auto">
@@ -1482,7 +1482,7 @@ export const Admin = () => {
           Manage products and other administrative settings.
         </p>
       </div>
-      
+
       <Tabs defaultValue="seller" className="w-full">
         <TabsList className="grid w-full grid-cols-2 h-auto p-1">
           <TabsTrigger

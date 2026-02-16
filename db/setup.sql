@@ -437,6 +437,70 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Function to get comprehensive financial analytics with filtering
+CREATE OR REPLACE FUNCTION get_financial_analytics(
+    p_start_date TIMESTAMPTZ DEFAULT NULL,
+    p_end_date TIMESTAMPTZ DEFAULT NULL,
+    p_vendor_ids UUID[] DEFAULT NULL,
+    p_customer_ids UUID[] DEFAULT NULL,
+    p_category_ids UUID[] DEFAULT NULL
+)
+RETURNS TABLE(
+    total_revenue NUMERIC,
+    total_expenses NUMERIC,
+    net_profit NUMERIC,
+    profit_margin NUMERIC,
+    outstanding_receivables NUMERIC,
+    transaction_count BIGINT
+) AS $$
+DECLARE
+    v_start_date TIMESTAMPTZ;
+    v_end_date TIMESTAMPTZ;
+BEGIN
+    -- Set default date range if not provided (last 30 days)
+    v_start_date := COALESCE(p_start_date, now() - interval '30 days');
+    v_end_date := COALESCE(p_end_date, now());
+
+    RETURN QUERY
+    WITH filtered_transactions AS (
+        SELECT 
+            t.amount,
+            t.type,
+            t.date_of_transaction
+        FROM transactions t
+        WHERE 
+            t.date_of_transaction >= v_start_date
+            AND t.date_of_transaction <= v_end_date
+            AND (p_vendor_ids IS NULL OR t.vendor_id = ANY(p_vendor_ids))
+            AND (p_customer_ids IS NULL OR t.customer_id = ANY(p_customer_ids))
+            AND (p_category_ids IS NULL OR t.category_id = ANY(p_category_ids))
+    ),
+    revenue_sum AS (
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM filtered_transactions
+        WHERE type = 'revenue'
+    ),
+    expense_sum AS (
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM filtered_transactions
+        WHERE type = 'expense'
+    )
+    SELECT
+        r.total as total_revenue,
+        e.total as total_expenses,
+        (r.total - e.total) as net_profit,
+        CASE 
+            WHEN r.total > 0 THEN ((r.total - e.total) / r.total * 100)
+            ELSE 0
+        END as profit_margin,
+        (SELECT COALESCE(SUM(total_amount - paid_amount), 0) 
+         FROM bills 
+         WHERE status IN ('outstanding', 'partial')) as outstanding_receivables,
+        (SELECT COUNT(*) FROM filtered_transactions) as transaction_count
+    FROM revenue_sum r, expense_sum e;
+END;
+$$ LANGUAGE plpgsql;
+
 
 -- Function to delete a bill and handle all related data
 CREATE OR REPLACE FUNCTION delete_bill(p_bill_id UUID)
