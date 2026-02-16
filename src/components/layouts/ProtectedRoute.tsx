@@ -12,7 +12,7 @@ const routePermissions: Record<string, string[]> = {
   '/customers': ['admin', 'manager'],
   '/damaged-stock': ['admin', 'manager'],
   '/financial-analytics': ['admin', 'manager'],
-  '/admin': ['admin', 'manager'], // Allow both admin and manager for Financial Analytics access
+  '/admin': ['admin'], // Admin only
 };
 
 export function ProtectedRoute() {

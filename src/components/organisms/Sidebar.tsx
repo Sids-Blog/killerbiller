@@ -33,7 +33,7 @@ const allNavigation = [
   { name: "Customers", href: "/customers", icon: Users, roles: ['admin', 'manager'] },
   { name: "Damaged Stock", href: "/damaged-stock", icon: Trash2, roles: ['admin', 'manager'] },
   { name: "Financial Analytics", href: "/financial-analytics", icon: TrendingUp, roles: ['admin', 'manager'] },
-  { name: "Admin", href: "/admin", icon: Home, roles: ['admin', 'manager'] },
+  { name: "Admin", href: "/admin", icon: Home, roles: ['admin'] },
 ];
 
 interface SidebarProps {
