@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/popover";
 import { Edit, Trash2, Plus, Check, ChevronsUpDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import { dbUtils, castRow } from "@/lib/db-utils";
 
 interface Vendor {
   id: string;
@@ -80,16 +80,27 @@ export const Products = () => {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const productPromise = supabase
-      .from("products")
-      .select("*, product_vendors(customers(id, name))")
-      .order("name", { ascending: true });
+    
+    // Fetch Products with their Vendors
+    const productPromise = dbUtils.execute(`
+      SELECT p.*, 
+             COALESCE(
+               json_agg(
+                 json_build_object('customers', json_build_object('id', c.id, 'name', c.name))
+               ) FILTER (WHERE c.id IS NOT NULL), 
+               '[]'
+             ) as product_vendors
+      FROM products p
+      LEFT JOIN product_vendors pv ON p.id = pv.product_id
+      LEFT JOIN customers c ON pv.vendor_id = c.id
+      GROUP BY p.id
+      ORDER BY p.name ASC
+    `);
 
-    const vendorPromise = supabase
-      .from("customers")
-      .select("id, name")
-      .eq("type", "vendor")
-      .order("name", { ascending: true });
+    const vendorPromise = dbUtils.select("customers", { 
+      where: "type = 'vendor'", 
+      orderBy: "name ASC" 
+    });
 
     const [productRes, vendorRes] = await Promise.all([
       productPromise,
@@ -99,17 +110,17 @@ export const Products = () => {
     if (productRes.error) {
       toast({
         title: "Error fetching products",
-        description: productRes.error.message,
+        description: productRes.error,
         variant: "destructive",
       });
     } else {
-      setProducts(productRes.data as Product[] || []);
+      setProducts((productRes.data || []).map((p: any) => castRow(p)) as Product[]);
     }
 
     if (vendorRes.error) {
       toast({
         title: "Error fetching vendors",
-        description: vendorRes.error.message,
+        description: vendorRes.error,
         variant: "destructive",
       });
     } else {
@@ -169,7 +180,7 @@ export const Products = () => {
       return;
     }
 
-    const { error } = await supabase.rpc("upsert_product_with_vendors", {
+    const { error } = await dbUtils.rpc("upsert_product_with_vendors", {
       p_id: editingProduct?.id || null,
       p_name: formData.name,
       p_price: formData.lot_price / formData.lot_size,
@@ -182,7 +193,7 @@ export const Products = () => {
     if (error) {
       toast({
         title: "Error saving product",
-        description: error.message,
+        description: error,
         variant: "destructive",
       });
     } else {
@@ -197,11 +208,11 @@ export const Products = () => {
   };
 
   const deleteProduct = async (productId: string) => {
-    const { error } = await supabase.from("products").delete().eq("id", productId);
+    const { error } = await dbUtils.execute("DELETE FROM products WHERE id = $1", [productId]);
     if (error) {
       toast({
         title: "Error deleting product",
-        description: error.message,
+        description: error,
         variant: "destructive",
       });
     } else {
@@ -303,9 +314,9 @@ export const Products = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  <div className="flex justify-between"><span className="text-sm text-muted-foreground">Lot Price:</span><span className="font-medium">Rs. {product.lot_price.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span className="text-sm text-muted-foreground">Lot Price:</span><span className="font-medium">Rs. {Number(product.lot_price).toFixed(2)}</span></div>
                   <div className="flex justify-between"><span className="text-sm text-muted-foreground">Lot Size:</span><span className="font-medium">{product.lot_size} units</span></div>
-                  <div className="flex justify-between"><span className="text-sm text-muted-foreground">Unit Price:</span><span className="font-medium">Rs. {product.price.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span className="text-sm text-muted-foreground">Unit Price:</span><span className="font-medium">Rs. {Number(product.price).toFixed(2)}</span></div>
                   <div className="flex justify-between"><span className="text-sm text-muted-foreground">Min Stock:</span><span className="font-medium">{product.min_stock} units</span></div>
                 </div>
                 <div className="mt-4 pt-2 border-t">

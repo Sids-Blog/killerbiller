@@ -17,9 +17,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { n, fmt } from "@/lib/fmt";
 import { useAuth } from "@/hooks/useAuth";
 import { exportToCSV, formatCurrency } from "@/lib/csv-export";
-import { supabase } from "@/lib/supabase";
+import { dbUtils } from "@/lib/db-utils";
+import { sql } from "@/lib/db";
 import { endOfMonth, format, startOfMonth } from "date-fns";
 import { AlertTriangle, Check, ChevronsUpDown, Download, Package, Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -90,25 +92,57 @@ export const Inventory = () => {
 
   const fetchInitialData = useCallback(async () => {
     setLoading(true);
-    const inventoryPromise = supabase.from("inventory").select(`
-      quantity,
-      products (id, name, price, min_stock, lot_size)
-    `);
-    const vendorsPromise = supabase.from("customers").select("id, name").eq("type", "vendor").order("name", { ascending: true });
-    const allProductsPromise = supabase.from("products").select("id, name").order("name", { ascending: true });
     
-    let transactionsQuery = supabase.from("inventory_transactions").select(`
-      id, created_at, quantity_change, comments,
-      products (name),
-      customers (name)
+    // Fetch Inventory with Products join
+    const inventoryPromise = dbUtils.execute(`
+      SELECT i.quantity, p.id, p.name, p.price, p.min_stock, p.lot_size
+      FROM inventory i
+      JOIN products p ON i.product_id = p.id
     `);
 
-    if (productFilter !== "all") transactionsQuery = transactionsQuery.eq('product_id', productFilter);
-    if (vendorFilter !== "all") transactionsQuery = transactionsQuery.eq('vendor_id', vendorFilter);
-    if (dateRange?.from) transactionsQuery = transactionsQuery.gte('created_at', dateRange.from.toISOString());
-    if (dateRange?.to) transactionsQuery = transactionsQuery.lte('created_at', dateRange.to.toISOString());
+    // Fetch Vendors
+    const vendorsPromise = dbUtils.select("customers", { 
+      where: "type = 'vendor' AND is_active = true", 
+      orderBy: "name ASC" 
+    });
 
-    const transactionsPromise = transactionsQuery.order("created_at", { ascending: false });
+    // Fetch All Products
+    const allProductsPromise = dbUtils.select("products", { 
+      orderBy: "name ASC" 
+    });
+    
+    // Fetch Transactions with Joins
+    let transactionsSql = `
+      SELECT t.id, t.created_at, t.quantity_change, t.comments,
+             p.name as product_name,
+             c.name as customer_name
+      FROM inventory_transactions t
+      LEFT JOIN products p ON t.product_id = p.id
+      LEFT JOIN customers c ON t.vendor_id = c.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (productFilter !== "all") {
+      transactionsSql += ` AND t.product_id = $${paramIndex++}`;
+      params.push(productFilter);
+    }
+    if (vendorFilter !== "all") {
+      transactionsSql += ` AND t.vendor_id = $${paramIndex++}`;
+      params.push(vendorFilter);
+    }
+    if (dateRange?.from) {
+      transactionsSql += ` AND t.created_at >= $${paramIndex++}`;
+      params.push(dateRange.from.toISOString());
+    }
+    if (dateRange?.to) {
+      transactionsSql += ` AND t.created_at <= $${paramIndex++}`;
+      params.push(dateRange.to.toISOString());
+    }
+
+    transactionsSql += " ORDER BY t.created_at DESC";
+    const transactionsPromise = dbUtils.execute(transactionsSql, params);
 
     const [
       inventoryRes,
@@ -117,26 +151,34 @@ export const Inventory = () => {
       allProductsRes
     ] = await Promise.all([inventoryPromise, vendorsPromise, transactionsPromise, allProductsPromise]);
 
-    if (inventoryRes.error) toast({ title: "Error fetching inventory", description: inventoryRes.error.message, variant: "destructive" });
+    if (inventoryRes.error) toast({ title: "Error fetching inventory", description: inventoryRes.error, variant: "destructive" });
     else {
-      const formattedData = inventoryRes.data.map((item: any) => ({
-        id: item.products.id,
-        name: item.products.name,
+      const formattedData = (inventoryRes.data as any[]).map((item: any) => ({
+        id: item.id,
+        name: item.name,
         current_stock: item.quantity,
-        min_stock: item.products.min_stock,
-        price: item.products.price,
-        lot_size: item.products.lot_size || 1,
+        min_stock: item.min_stock,
+        price: item.price,
+        lot_size: item.lot_size || 1,
       }));
       setInventory(formattedData as InventoryItem[]);
     }
 
-    if (vendorsRes.error) toast({ title: "Error fetching vendors", description: vendorsRes.error.message, variant: "destructive" });
+    if (vendorsRes.error) toast({ title: "Error fetching vendors", description: vendorsRes.error, variant: "destructive" });
     else setVendors(vendorsRes.data || []);
 
-    if (transactionsRes.error) toast({ title: "Error fetching transactions", description: transactionsRes.error.message, variant: "destructive" });
-    else setTransactions(transactionsRes.data as unknown as Transaction[]);
+    if (transactionsRes.error) toast({ title: "Error fetching transactions", description: transactionsRes.error, variant: "destructive" });
+    else {
+      // Map the names to match the expected structure if necessary
+      const formattedTxs = (transactionsRes.data as any[]).map(tx => ({
+        ...tx,
+        products: { name: tx.product_name },
+        customers: { name: tx.customer_name }
+      }));
+      setTransactions(formattedTxs as unknown as Transaction[]);
+    }
 
-    if (allProductsRes.error) toast({ title: "Error fetching all products", description: allProductsRes.error.message, variant: "destructive" });
+    if (allProductsRes.error) toast({ title: "Error fetching all products", description: allProductsRes.error, variant: "destructive" });
     else setAllProducts(allProductsRes.data || []);
 
     setLoading(false);
@@ -168,16 +210,18 @@ export const Inventory = () => {
       setLoadingProducts(true);
       setSelectedProduct(""); // Reset product selection
 
-      const { data, error } = await supabase
-        .from("product_vendors")
-        .select("products(id, name, lot_size)")
-        .eq("vendor_id", selectedVendor);
+      const { data, error } = await dbUtils.execute(`
+        SELECT p.id, p.name, p.lot_size
+        FROM product_vendors pv
+        JOIN products p ON pv.product_id = p.id
+        WHERE pv.vendor_id = $1
+      `, [selectedVendor]);
 
       if (error) {
-        toast({ title: "Error fetching products for vendor", description: error.message, variant: "destructive" });
+        toast({ title: "Error fetching products for vendor", description: error, variant: "destructive" });
         setProducts([]);
       } else {
-        setProducts(data.map(item => item.products) as unknown as Product[]);
+        setProducts(data as Product[]);
       }
       setLoadingProducts(false);
     };
@@ -205,8 +249,13 @@ export const Inventory = () => {
       return;
     }
 
-    const { error } = await supabase.rpc("increment_stock", { p_product_id: selectedProduct, p_quantity: quantity, p_vendor_id: selectedVendor, p_comments: comments });
-    if (error) toast({ title: "Error updating stock", description: error.message, variant: "destructive" });
+    const { error } = await dbUtils.rpc("increment_stock", { 
+      p_product_id: selectedProduct, 
+      p_quantity: quantity, 
+      p_vendor_id: selectedVendor, 
+      p_comments: comments 
+    });
+    if (error) toast({ title: "Error updating stock", description: error, variant: "destructive" });
     else {
       toast({ title: "Success", description: "Stock updated successfully." });
       setSelectedProduct("");
@@ -224,8 +273,8 @@ export const Inventory = () => {
       toast({ title: "Error", description: "Quantity cannot be negative.", variant: "destructive" });
       return;
     }
-    const { error } = await supabase.from("inventory").update({ quantity: newQuantity }).eq("product_id", productId);
-    if (error) toast({ title: "Error updating stock", description: error.message, variant: "destructive" });
+    const { error } = await dbUtils.update("inventory", { quantity: newQuantity }, "product_id = $2", [productId]);
+    if (error) toast({ title: "Error updating stock", description: error, variant: "destructive" });
     else {
       toast({ title: "Success", description: "Stock updated successfully." });
       fetchInitialData();
@@ -242,7 +291,7 @@ export const Inventory = () => {
 
   const lowStockCount = inventory.filter(item => item.current_stock <= item.min_stock).length;
   const outOfStockCount = inventory.filter(item => item.current_stock === 0).length;
-  const totalValue = inventory.reduce((sum, item) => sum + (item.current_stock * item.price), 0);
+  const totalValue = inventory.reduce((sum, item) => sum + (n(item.current_stock) * n(item.price)), 0);
 
   return (
     <div className="space-y-6">
@@ -256,7 +305,7 @@ export const Inventory = () => {
         <Card><CardContent className="p-4"><div className="flex items-center gap-2"><Package className="h-5 w-5 text-primary" /><div><p className="text-sm text-muted-foreground">Total Products</p><p className="text-2xl font-bold">{inventory.length}</p></div></div></CardContent></Card>
         <Card><CardContent className="p-4"><div className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-warning" /><div><p className="text-sm text-muted-foreground">Low Stock</p><p className="text-2xl font-bold text-warning">{lowStockCount}</p></div></div></CardContent></Card>
         <Card><CardContent className="p-4"><div className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-destructive" /><div><p className="text-sm text-muted-foreground">Out of Stock</p><p className="text-2xl font-bold text-destructive">{outOfStockCount}</p></div></div></CardContent></Card>
-        <Card><CardContent className="p-4"><div><p className="text-sm text-muted-foreground">Inventory Value</p><p className="text-2xl font-bold">Rs. {totalValue.toFixed(2)}</p></div></CardContent></Card>
+        <Card><CardContent className="p-4"><div><p className="text-sm text-muted-foreground">Inventory Value</p><p className="text-2xl font-bold">Rs. {fmt(totalValue)}</p></div></CardContent></Card>
       </div>
 
       <Tabs defaultValue="add-stock">
@@ -489,7 +538,7 @@ export const Inventory = () => {
                               </div>
                             )}
                             <span>Min: {item.min_stock}</span>
-                            <span>Value: Rs. {(item.current_stock * item.price).toFixed(2)}</span>
+                            <span>Value: Rs. {fmt(n(item.current_stock) * n(item.price))}</span>
                             {item.lot_size > 1 && (
                               <span className="text-green-600">
                                 Lot Size: {item.lot_size}

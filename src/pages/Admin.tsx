@@ -15,7 +15,8 @@ import { Edit, Trash2, Plus, Building, Download, AlertTriangle, Clock, DollarSig
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import * as XLSX from 'exceljs';
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import { n, fmt, fmtLocale } from "@/lib/fmt";
+import { dbUtils } from "@/lib/db-utils";
 import { Products } from "./Products"; // Import the Products component
 import UserManagement from "./UserManagement";
 import { useState, useEffect, useCallback } from "react";
@@ -147,9 +148,9 @@ const ExpenseCategoryManager = () => {
 
   const fetchCategories = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from("expense_categories").select("*").order("name");
+    const { data, error } = await dbUtils.select("expense_categories", { orderBy: "name ASC" });
     if (error) {
-      toast({ title: "Error fetching categories", description: error.message, variant: "destructive" });
+      toast({ title: "Error fetching categories", description: error, variant: "destructive" });
     } else {
       setCategories(data || []);
     }
@@ -178,16 +179,16 @@ const ExpenseCategoryManager = () => {
     }
 
     if (editingCategory) {
-      const { error } = await supabase.from("expense_categories").update({ name: categoryName }).eq("id", editingCategory.id);
+      const { error } = await dbUtils.update("expense_categories", { name: categoryName }, "id = $2", [editingCategory.id]);
       if (error) {
-        toast({ title: "Error updating category", description: error.message, variant: "destructive" });
+        toast({ title: "Error updating category", description: error, variant: "destructive" });
       } else {
         toast({ title: "Success", description: "Category updated." });
       }
     } else {
-      const { error } = await supabase.from("expense_categories").insert([{ name: categoryName }]);
+      const { error } = await dbUtils.insert("expense_categories", { name: categoryName });
       if (error) {
-        toast({ title: "Error creating category", description: error.message, variant: "destructive" });
+        toast({ title: "Error creating category", description: error, variant: "destructive" });
       } else {
         toast({ title: "Success", description: "Category created." });
       }
@@ -197,9 +198,9 @@ const ExpenseCategoryManager = () => {
   };
 
   const deleteCategory = async (categoryId: string) => {
-    const { error } = await supabase.from("expense_categories").delete().eq("id", categoryId);
+    const { error } = await dbUtils.execute(`DELETE FROM expense_categories WHERE id = $1`, [categoryId]);
     if (error) {
-      toast({ title: "Error deleting category", description: error.message, variant: "destructive" });
+      toast({ title: "Error deleting category", description: error, variant: "destructive" });
     } else {
       toast({ title: "Success", description: "Category deleted." });
       fetchCategories();
@@ -324,23 +325,24 @@ const SellerInfoManager = () => {
 
   const fetchSellerInfo = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from("seller_info").select("*").limit(1).maybeSingle();
+    const { data, error } = await dbUtils.execute(`SELECT * FROM seller_info LIMIT 1`);
     if (error) {
-      toast({ title: "Error fetching seller info", description: error.message, variant: "destructive" });
+      toast({ title: "Error fetching seller info", description: error, variant: "destructive" });
     } else {
-      setSellerInfo(data);
-      if (data) {
+      const info = data?.[0] || null;
+      setSellerInfo(info);
+      if (info) {
         setFormData({
-          company_name: data.company_name,
-          address: data.address,
-          contact_number: data.contact_number,
-          gst_number: data.gst_number || "",
-          email: data.email || "",
-          bank_account_number: data.bank_account_number,
-          account_holder_name: data.account_holder_name,
-          account_no: data.account_no,
-          branch: data.branch,
-          ifsc_code: data.ifsc_code,
+          company_name: info.company_name,
+          address: info.address,
+          contact_number: info.contact_number,
+          gst_number: info.gst_number || "",
+          email: info.email || "",
+          bank_account_number: info.bank_account_number,
+          account_holder_name: info.account_holder_name,
+          account_no: info.account_no,
+          branch: info.branch,
+          ifsc_code: info.ifsc_code,
         });
       }
     }
@@ -379,30 +381,17 @@ const SellerInfoManager = () => {
 
     if (sellerInfo) {
       // Update existing record
-      const { error } = await supabase
-        .from("seller_info")
-        .update(formData)
-        .eq("id", sellerInfo.id);
+      const { error } = await dbUtils.update("seller_info", formData, "id = $11", [sellerInfo.id]);
       if (error) {
-        toast({ title: "Error updating seller info", description: error.message, variant: "destructive" });
+        toast({ title: "Error updating seller info", description: error, variant: "destructive" });
       } else {
         toast({ title: "Success", description: "Seller information updated." });
       }
     } else {
       // Create new record (should only happen once due to single-row constraint)
-      const { error } = await supabase.from("seller_info").insert([formData]);
+      const { error } = await dbUtils.insert("seller_info", formData);
       if (error) {
-        // If there's a constraint violation, it means a record already exists
-        if (error.code === '23505') {
-          toast({
-            title: "Error",
-            description: "Seller information already exists. Please refresh the page.",
-            variant: "destructive"
-          });
-          fetchSellerInfo(); // Refresh to get the existing record
-        } else {
-          toast({ title: "Error creating seller info", description: error.message, variant: "destructive" });
-        }
+        toast({ title: "Error creating seller info", description: error, variant: "destructive" });
       } else {
         toast({ title: "Success", description: "Seller information created." });
       }
@@ -688,10 +677,10 @@ SET session_replication_role = replica;
       // Export each table
       for (const tableName of tables) {
         try {
-          const { data, error } = await supabase.from(tableName).select('*');
+          const { data, error } = await dbUtils.select(tableName);
 
           if (error) {
-            console.warn(`Failed to export table ${tableName}:`, error.message);
+            console.warn(`Failed to export table ${tableName}:`, error);
             continue;
           }
 
@@ -794,10 +783,10 @@ SET session_replication_role = replica;
       // Export each table as a separate worksheet
       for (const tableName of tables) {
         try {
-          const { data, error } = await supabase.from(tableName).select('*');
+          const { data, error } = await dbUtils.select(tableName);
 
           if (error) {
-            console.warn(`Failed to export table ${tableName}:`, error.message);
+            console.warn(`Failed to export table ${tableName}:`, error);
             continue;
           }
 
@@ -938,25 +927,23 @@ const InsightsManager = () => {
 
   const fetchProductOrderData = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('order_items')
-        .select(`
-          product_id,
-          lots,
-          units,
-          orders!inner (
-            created_at
-          ),
-          products (
-            name,
-            lot_size
-          )
-        `);
+      const { data, error } = await dbUtils.execute(`
+        SELECT
+          oi.product_id,
+          oi.lots,
+          oi.units,
+          o.created_at as order_created_at,
+          p.name as product_name,
+          p.lot_size
+        FROM order_items oi
+        INNER JOIN orders o ON oi.order_id = o.id
+        LEFT JOIN products p ON oi.product_id = p.id
+      `);
 
       if (error) {
         toast({
           title: "Error fetching product data",
-          description: error.message,
+          description: error,
           variant: "destructive"
         });
         return;
@@ -971,20 +958,16 @@ const InsightsManager = () => {
       // Calculate quantities per product with time periods
       const productMap = new Map();
 
-      data?.forEach(item => {
-        // Type check: products and orders should be objects, not arrays
-        const products = Array.isArray(item.products) ? item.products[0] : item.products;
-        const orders = Array.isArray(item.orders) ? item.orders[0] : item.orders;
-
-        if (products && orders) {
+      (data || []).forEach((item: any) => {
+        if (item.product_name) {
           const productId = item.product_id;
-          const lotSize = products.lot_size || 1;
+          const lotSize = item.lot_size || 1;
           const totalQuantity = (item.lots * lotSize) + item.units;
-          const orderDate = new Date(orders.created_at);
+          const orderDate = new Date(item.order_created_at);
 
           if (!productMap.has(productId)) {
             productMap.set(productId, {
-              name: products.name,
+              name: item.product_name,
               totalQuantity: 0,
               thisMonth: 0,
               lastMonth: 0,
@@ -996,12 +979,9 @@ const InsightsManager = () => {
           product.totalQuantity += totalQuantity;
           product.orderCount += 1;
 
-          // Check if order is from this month
           if (orderDate >= thisMonthStart) {
             product.thisMonth += totalQuantity;
           }
-
-          // Check if order is from last month
           if (orderDate >= lastMonthStart && orderDate <= lastMonthEnd) {
             product.lastMonth += totalQuantity;
           }
@@ -1023,35 +1003,30 @@ const InsightsManager = () => {
 
   const fetchOutstandingBills = useCallback(async () => {
     try {
-      // Get bills that are outstanding for more than 15 days
       const fifteenDaysAgo = new Date();
       fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
 
-      const { data, error } = await supabase
-        .from('bills')
-        .select(`
-          id,
-          invoice_number,
-          total_amount,
-          paid_amount,
-          status,
-          date_of_bill,
-          created_at,
-          customers (
-            id,
-            name,
-            primary_phone_number,
-            outstanding_balance
-          )
-        `)
-        .in('status', ['outstanding', 'partial'])
-        .lt('date_of_bill', fifteenDaysAgo.toISOString())
-        .order('date_of_bill', { ascending: true });
+      const { data, error } = await dbUtils.execute(`
+        SELECT
+          b.id, b.invoice_number, b.total_amount, b.paid_amount,
+          b.status, b.date_of_bill, b.created_at,
+          json_build_object(
+            'id', c.id,
+            'name', c.name,
+            'primary_phone_number', c.primary_phone_number,
+            'outstanding_balance', c.outstanding_balance
+          ) as customers
+        FROM bills b
+        LEFT JOIN customers c ON b.customer_id = c.id
+        WHERE b.status IN ('outstanding', 'partial')
+          AND b.date_of_bill < $1
+        ORDER BY b.date_of_bill ASC
+      `, [fifteenDaysAgo.toISOString()]);
 
       if (error) {
         toast({
           title: "Error fetching outstanding bills",
-          description: error.message,
+          description: error,
           variant: "destructive"
         });
       } else {
@@ -1086,8 +1061,8 @@ const InsightsManager = () => {
     return diffDays;
   };
 
-  const getOutstandingAmount = (total: number, paid: number) => {
-    return total - paid;
+  const getOutstandingAmount = (total: any, paid: any) => {
+    return n(total) - n(paid);
   };
 
   const getTotalOutstandingAmount = () => {
@@ -1180,7 +1155,7 @@ const InsightsManager = () => {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₹{getTotalOutstandingAmount().toLocaleString()}</div>
+            <div className="text-2xl font-bold">₹{fmtLocale(getTotalOutstandingAmount())}</div>
             <p className="text-xs text-muted-foreground">
               Across all overdue bills
             </p>
@@ -1417,7 +1392,7 @@ const InsightsManager = () => {
                           <div>
                             <p className="text-xs text-muted-foreground">Total Outstanding</p>
                             <p className="font-semibold text-lg text-orange-600">
-                              ₹{customer.total_outstanding.toLocaleString()}
+                              ₹{fmtLocale(customer.total_outstanding)}
                             </p>
                           </div>
                           <div>
@@ -1429,7 +1404,7 @@ const InsightsManager = () => {
                           <div>
                             <p className="text-xs text-muted-foreground">Customer Balance</p>
                             <p className="font-semibold text-lg text-blue-600">
-                              ₹{customer.outstanding_balance.toLocaleString()}
+                              ₹{fmtLocale(customer.outstanding_balance)}
                             </p>
                           </div>
                         </div>
@@ -1448,7 +1423,7 @@ const InsightsManager = () => {
                               </div>
                               <div className="text-right">
                                 <p className="font-medium text-orange-600">
-                                  ₹{bill.outstanding_amount.toLocaleString()}
+                                  ₹{fmtLocale(bill.outstanding_amount)}
                                 </p>
                                 <p className="text-xs text-red-600">
                                   {bill.days_overdue} days overdue

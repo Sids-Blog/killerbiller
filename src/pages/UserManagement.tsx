@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Edit, Trash2, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import { dbUtils } from "@/lib/db-utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface User {
@@ -34,10 +34,10 @@ const UserManagement = () => {
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.rpc('get_users_with_roles');
+    const { data, error } = await dbUtils.rpc('get_users_with_roles', {});
 
     if (error) {
-      toast({ title: "Error fetching users", description: error.message, variant: "destructive" });
+      toast({ title: "Error fetching users", description: error, variant: "destructive" });
     } else {
       setUsers(data || []);
     }
@@ -45,9 +45,9 @@ const UserManagement = () => {
   }, [toast]);
 
   const fetchRoles = useCallback(async () => {
-    const { data, error } = await supabase.from('roles').select('*');
+    const { data, error } = await dbUtils.select('roles');
     if (error) {
-      toast({ title: "Error fetching roles", description: error.message, variant: "destructive" });
+      toast({ title: "Error fetching roles", description: error, variant: "destructive" });
     } else {
       setRoles(data || []);
     }
@@ -79,46 +79,65 @@ const UserManagement = () => {
       // Update user role
       if (!selectedRole) return;
 
-      const { error: deleteError } = await supabase.from('user_roles').delete().eq('user_id', editingUser.id);
+      const { error: deleteError } = await dbUtils.execute(`DELETE FROM user_roles WHERE user_id = $1`, [editingUser.id]);
       if (deleteError) {
-        toast({ title: "Error updating user role", description: deleteError.message, variant: "destructive" });
+        toast({ title: "Error updating user role", description: deleteError, variant: "destructive" });
         return;
       }
 
-      const { error: insertError } = await supabase.from('user_roles').insert({ user_id: editingUser.id, role_id: selectedRole });
+      const { error: insertError } = await dbUtils.insert('user_roles', { user_id: editingUser.id, role_id: selectedRole });
       if (insertError) {
-        toast({ title: "Error updating user role", description: insertError.message, variant: "destructive" });
+        toast({ title: "Error updating user role", description: insertError, variant: "destructive" });
       } else {
         toast({ title: "Success", description: "User role updated." });
         fetchUsers();
         setIsDialogOpen(false);
       }
     } else {
-      // Create new user
+      // Create new user directly in Neon with a hashed password
       if (!email || !password || !selectedRole) {
         toast({ title: "Error", description: "All fields are required.", variant: "destructive" });
         return;
       }
-      const { data: newUser, error } = await supabase.auth.signUp({ email, password });
-      if (error) {
-        toast({ title: "Error creating user", description: error.message, variant: "destructive" });
-      } else if (newUser.user) {
-        const { error: roleError } = await supabase.from('user_roles').insert({ user_id: newUser.user.id, role_id: selectedRole });
-        if (roleError) {
-          toast({ title: "Error assigning role", description: roleError.message, variant: "destructive" });
-        } else {
-          toast({ title: "Success", description: "User created." });
-          fetchUsers();
-          setIsDialogOpen(false);
-        }
+
+      // Insert user with bcrypt-hashed password via pgcrypto
+      const { data: newUserData, error: userError } = await dbUtils.execute(
+        `INSERT INTO users (email, username, password_hash)
+         VALUES ($1, $2, crypt($3, gen_salt('bf')))
+         RETURNING id`,
+        [email, email, password]
+      );
+
+      if (userError) {
+        toast({ title: "Error creating user", description: userError, variant: "destructive" });
+        return;
+      }
+
+      const newUserId = newUserData?.[0]?.id;
+      if (!newUserId) {
+        toast({ title: "Error", description: "Failed to create user.", variant: "destructive" });
+        return;
+      }
+
+      const { error: roleError } = await dbUtils.insert('user_roles', {
+        user_id: newUserId,
+        role_id: selectedRole
+      });
+
+      if (roleError) {
+        toast({ title: "Error assigning role", description: roleError, variant: "destructive" });
+      } else {
+        toast({ title: "Success", description: "User created." });
+        fetchUsers();
+        setIsDialogOpen(false);
       }
     }
   };
 
   const deleteUser = async (userId: string) => {
-    const { error } = await supabase.rpc('delete_user', { user_id_to_delete: userId });
+    const { error } = await dbUtils.rpc('delete_user', { user_id_to_delete: userId });
     if (error) {
-      toast({ title: "Error deleting user", description: error.message, variant: "destructive" });
+      toast({ title: "Error deleting user", description: error, variant: "destructive" });
     } else {
       toast({ title: "Success", description: "User deleted." });
       fetchUsers();

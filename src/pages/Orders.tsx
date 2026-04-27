@@ -25,7 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Trash2, Plus, FileText, Edit, ChevronsUpDown, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/lib/supabase";
+import { dbUtils } from "@/lib/db-utils";
 import {
   Dialog,
   DialogContent,
@@ -105,18 +105,39 @@ export const Orders = () => {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const customerPromise = supabase
-      .from("customers")
-      .select("id, name")
-      .eq("is_active", true)
-      .eq("type", "customer");
-    const productPromise = supabase
-      .from("products")
-      .select("*, inventory(quantity)");
-    const ordersPromise = supabase
-      .from("orders")
-      .select("id, order_number, created_at, status, customer_id, comments, customers ( name ), order_items(id, lots, units, product_id, products(name, lot_size))")
-      .order("created_at", { ascending: false });
+    
+    const customerPromise = dbUtils.select("customers", {
+      where: "is_active = true AND type = 'customer'",
+    });
+
+    const productPromise = dbUtils.execute(`
+      SELECT p.*, i.quantity
+      FROM products p
+      LEFT JOIN inventory i ON p.id = i.product_id
+    `);
+
+    const ordersPromise = dbUtils.execute(`
+      SELECT o.id, o.order_number, o.created_at, o.status, o.customer_id, o.comments,
+             json_build_object('name', c.name) as customers,
+             COALESCE(
+               json_agg(
+                 json_build_object(
+                   'id', oi.id, 
+                   'lots', oi.lots, 
+                   'units', oi.units, 
+                   'product_id', oi.product_id, 
+                   'products', json_build_object('name', p.name, 'lot_size', p.lot_size)
+                 )
+               ) FILTER (WHERE oi.id IS NOT NULL),
+               '[]'
+             ) as order_items
+      FROM orders o
+      LEFT JOIN customers c ON o.customer_id = c.id
+      LEFT JOIN order_items oi ON o.id = oi.order_id
+      LEFT JOIN products p ON oi.product_id = p.id
+      GROUP BY o.id, c.name
+      ORDER BY o.created_at DESC
+    `);
 
     const [customerRes, productRes, ordersRes] = await Promise.all([
       customerPromise,
@@ -124,20 +145,22 @@ export const Orders = () => {
       ordersPromise,
     ]);
 
-    if (customerRes.error) toast({ title: "Error fetching customers", description: customerRes.error.message, variant: "destructive" });
+    if (customerRes.error) toast({ title: "Error fetching customers", description: customerRes.error, variant: "destructive" });
     else setCustomers(customerRes.data || []);
 
-    if (productRes.error) toast({ title: "Error fetching products", description: productRes.error.message, variant: "destructive" });
-    else setProducts(productRes.data || []);
-
-    if (ordersRes.error) toast({ title: "Error fetching orders", description: ordersRes.error.message, variant: "destructive" });
+    if (productRes.error) toast({ title: "Error fetching products", description: productRes.error, variant: "destructive" });
     else {
-      const transformedData = (ordersRes.data || []).map(order => ({
-        ...order,
-        customers: Array.isArray(order.customers) ? order.customers[0] || null : order.customers,
+      const formattedProducts = (productRes.data as any[]).map(p => ({
+        ...p,
+        inventory: { quantity: p.quantity ?? 0 }
       }));
-      setOrders(transformedData as unknown as Order[]);
-      setFilteredOrders(transformedData as unknown as Order[]);
+      setProducts(formattedProducts as Product[]);
+    }
+
+    if (ordersRes.error) toast({ title: "Error fetching orders", description: ordersRes.error, variant: "destructive" });
+    else {
+      setOrders(ordersRes.data as unknown as Order[]);
+      setFilteredOrders(ordersRes.data as unknown as Order[]);
     }
 
     setLoading(false);
@@ -204,11 +227,16 @@ export const Orders = () => {
       return;
     }
 
-    const { data: order, error: orderError } = await supabase
-      .from("orders").insert({ customer_id: selectedCustomer, status: "pending", comments: comments }).select().single();
+    const { data: orderData, error: orderError } = await dbUtils.insert("orders", { 
+      customer_id: selectedCustomer, 
+      status: "pending", 
+      comments: comments 
+    });
+
+    const order = orderData?.[0];
 
     if (orderError || !order) {
-      toast({ title: "Error creating order", description: orderError?.message, variant: "destructive" });
+      toast({ title: "Error creating order", description: orderError, variant: "destructive" });
       return;
     }
 
@@ -222,11 +250,13 @@ export const Orders = () => {
             units: units,
         }
     });
-    const { error: itemsError } = await supabase.from("order_items").insert(itemsToInsert);
-
-    if (itemsError) {
-      toast({ title: "Error adding order items", description: itemsError.message, variant: "destructive" });
-      return;
+    
+    for (const item of itemsToInsert) {
+      const { error: itemError } = await dbUtils.insert("order_items", item);
+      if (itemError) {
+        toast({ title: "Error adding order items", description: itemError, variant: "destructive" });
+        return;
+      }
     }
 
     toast({ title: "Success", description: "Order created successfully" });
@@ -288,22 +318,21 @@ export const Orders = () => {
       const lot_size = item.master_lot_size ?? 1;
       const lots = Math.floor(item.quantity / lot_size);
       const units = item.quantity % lot_size;
-      return supabase.from('order_items').update({ lots: lots, units: units }).eq('id', item.id)
+      return dbUtils.update('order_items', { lots: lots, units: units }, 'id = $3', [item.id])
     });
 
     const results = await Promise.all(itemUpdates);
     const itemsError = results.find(r => r.error)?.error;
 
-
     if (itemsError) {
-      toast({ title: "Error updating order items", description: itemsError.message, variant: "destructive" });
+      toast({ title: "Error updating order items", description: itemsError, variant: "destructive" });
       return;
     }
 
-    const { error: orderError } = await supabase.from('orders').update({ comments: editedComments }).eq('id', editingOrder.id);
+    const { error: orderError } = await dbUtils.update('orders', { comments: editedComments }, 'id = $2', [editingOrder.id]);
 
     if (orderError) {
-      toast({ title: "Error updating order", description: orderError.message, variant: "destructive" });
+      toast({ title: "Error updating order", description: orderError, variant: "destructive" });
       return;
     }
 

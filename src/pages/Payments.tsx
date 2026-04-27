@@ -32,7 +32,8 @@ import {
 } from "@/components/ui/table";
 import { CreditCard, ArrowDownCircle, CalendarIcon, ChevronsUpDown, Check, Download, Receipt } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import { n, fmt, fmtLocale } from "@/lib/fmt";
+import { dbUtils } from "@/lib/db-utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Calendar } from "@/components/ui/calendar";
@@ -170,48 +171,95 @@ export const Payments = () => {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const customersPromise = supabase.from("customers").select("id, name, outstanding_balance, type").eq("is_active", true).eq("type", "customer").order("name");
-    const vendorsPromise = supabase.from("customers").select("id, name, outstanding_balance, type").eq("is_active", true).eq("type", "vendor").order("name");
-    const categoriesPromise = supabase.from("expense_categories").select("*").order("name");
     
-    let query = supabase.from("transactions").select(`
-      id, amount, created_at, date_of_transaction, type, description,
-      customer:customers!customer_id(name),
-      vendor:customers!vendor_id(name),
-      expense_categories(name)
-    `);
+    const customersPromise = dbUtils.select("customers", {
+      where: "is_active = true AND type = 'customer'",
+      orderBy: "name ASC"
+    });
+    
+    const vendorsPromise = dbUtils.select("customers", {
+      where: "is_active = true AND type = 'vendor'",
+      orderBy: "name ASC"
+    });
+    
+    const categoriesPromise = dbUtils.select("expense_categories", {
+      orderBy: "name ASC"
+    });
+    
+    let query = `
+      SELECT t.id, t.amount, t.created_at, t.date_of_transaction, t.type, t.description,
+             json_build_object('name', c.name) as customer,
+             json_build_object('name', v.name) as vendor,
+             json_build_object('name', cat.name) as expense_categories
+      FROM transactions t
+      LEFT JOIN customers c ON t.customer_id = c.id
+      LEFT JOIN customers v ON t.vendor_id = v.id
+      LEFT JOIN expense_categories cat ON t.category_id = cat.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    let paramIndex = 1;
 
-    if (typeFilter !== "all") query = query.eq("type", typeFilter);
+    if (typeFilter !== "all") {
+      query += ` AND t.type = $${paramIndex++}`;
+      params.push(typeFilter);
+    }
+    
     if (partyFilter !== "all") {
         const party = combinedPartiesRef.current.find(p => p.id === partyFilter);
-        if (party?.type === 'customer') query = query.eq('customer_id', partyFilter);
-        else query = query.eq('vendor_id', partyFilter);
+        if (party?.type === 'customer') {
+          query += ` AND t.customer_id = $${paramIndex++}`;
+        } else {
+          query += ` AND t.vendor_id = $${paramIndex++}`;
+        }
+        params.push(partyFilter);
     }
-    if (dateRange?.from) query = query.gte('date_of_transaction', dateRange.from.toISOString());
-    if (dateRange?.to) query = query.lte('date_of_transaction', dateRange.to.toISOString());
+    
+    if (dateRange?.from) {
+      query += ` AND t.date_of_transaction >= $${paramIndex++}`;
+      params.push(dateRange.from.toISOString());
+    }
+    
+    if (dateRange?.to) {
+      query += ` AND t.date_of_transaction <= $${paramIndex++}`;
+      params.push(dateRange.to.toISOString());
+    }
 
-    const transactionsPromise = query.order("date_of_transaction", { ascending: false });
-    const creditsPromise = supabase.from("credit").select("*, customers(name)").order("created_at", { ascending: false });
+    query += ` ORDER BY t.date_of_transaction DESC`;
 
-    const [customersRes, vendorsRes, categoriesRes, transactionsRes, creditsRes] = await Promise.all([customersPromise, vendorsPromise, categoriesPromise, transactionsPromise, creditsPromise]);
+    const transactionsPromise = dbUtils.execute(query, params);
+    
+    const creditsPromise = dbUtils.execute(`
+      SELECT cr.*, json_build_object('name', v.name) as customers
+      FROM credit cr
+      LEFT JOIN customers v ON cr.vendor_id = v.id
+      ORDER BY cr.created_at DESC
+    `);
 
-    if (customersRes.error) toast({ title: "Error fetching customers", description: customersRes.error.message, variant: "destructive" });
+    const [customersRes, vendorsRes, categoriesRes, transactionsRes, creditsRes] = await Promise.all([
+      customersPromise, 
+      vendorsPromise, 
+      categoriesPromise, 
+      transactionsPromise, 
+      creditsPromise
+    ]);
+
+    if (customersRes.error) toast({ title: "Error fetching customers", description: customersRes.error, variant: "destructive" });
     else setCustomers(customersRes.data || []);
 
-    if (categoriesRes.error) toast({ title: "Error fetching expense categories", description: categoriesRes.error.message, variant: "destructive" });
+    if (categoriesRes.error) toast({ title: "Error fetching expense categories", description: categoriesRes.error, variant: "destructive" });
     else setExpenseCategories(categoriesRes.data || []);
 
-    if (transactionsRes.error) toast({ title: "Error fetching transactions", description: transactionsRes.error.message, variant: "destructive" });
+    if (transactionsRes.error) toast({ title: "Error fetching transactions", description: transactionsRes.error, variant: "destructive" });
     else setTransactions(transactionsRes.data as unknown as Transaction[]);
 
-    if (creditsRes.error) toast({ title: "Error fetching credits", description: creditsRes.error.message, variant: "destructive" });
+    if (creditsRes.error) toast({ title: "Error fetching credits", description: creditsRes.error, variant: "destructive" });
     else setCredits(creditsRes.data as unknown as Credit[]);
 
-    // Calculate vendor credit balances after credits are loaded
-    if (vendorsRes.error) toast({ title: "Error fetching vendors", description: vendorsRes.error.message, variant: "destructive" });
+    if (vendorsRes.error) toast({ title: "Error fetching vendors", description: vendorsRes.error, variant: "destructive" });
     else {
       const creditsData = creditsRes.data as unknown as Credit[] || [];
-      const vendorsWithCredits = vendorsRes.data?.map(vendor => {
+      const vendorsWithCredits = (vendorsRes.data || []).map(vendor => {
         const pendingCredits = creditsData.filter(credit => 
           credit.vendor_id === vendor.id && credit.status === 'pending'
         ).reduce((sum, credit) => sum + credit.amount, 0);
@@ -220,8 +268,8 @@ export const Payments = () => {
           ...vendor,
           credit_balance: pendingCredits
         };
-      }) || [];
-      setVendors(vendorsWithCredits);
+      });
+      setVendors(vendorsWithCredits as Vendor[]);
     }
 
     setLoading(false);
@@ -262,8 +310,11 @@ export const Payments = () => {
         setCustomerBills([]);
         return;
       }
-      const { data, error } = await supabase.from("bills").select("*").eq("customer_id", selectedCustomer).in("status", ["outstanding", "partial"]);
-      if (error) toast({ title: "Error fetching bills", description: error.message, variant: "destructive" });
+      const { data, error } = await dbUtils.select("bills", {
+        where: "customer_id = $1 AND status IN ('outstanding', 'partial')",
+        params: [selectedCustomer]
+      });
+      if (error) toast({ title: "Error fetching bills", description: error, variant: "destructive" });
       else setCustomerBills(data || []);
     };
     fetchCustomerBills();
@@ -275,8 +326,13 @@ export const Payments = () => {
       return;
     }
     setIsSubmitting(true);
-    const { error } = await supabase.rpc('process_payment', { p_customer_id: selectedCustomer, p_payment_amount: paymentAmount, p_bill_ids: selectedBills, p_date_of_transaction: collectionDate?.toISOString() });
-    if (error) toast({ title: "Error processing collection", description: error.message, variant: "destructive" });
+    const { error } = await dbUtils.rpc('process_payment', { 
+      p_customer_id: selectedCustomer, 
+      p_payment_amount: paymentAmount, 
+      p_bill_ids: selectedBills, 
+      p_date_of_transaction: collectionDate?.toISOString() 
+    });
+    if (error) toast({ title: "Error processing collection", description: error, variant: "destructive" });
     else {
       toast({ title: "Success", description: `Collection of Rs. ${paymentAmount} processed successfully.` });
       setSelectedCustomer("");
@@ -294,8 +350,14 @@ export const Payments = () => {
       return;
     }
     setIsSubmitting(true);
-    const { error } = await supabase.rpc('record_expense', { p_amount: expenseAmount, p_vendor_id: selectedVendor || null, p_category_id: selectedCategory || null, p_comments: expenseComments, p_date_of_transaction: expenseDate?.toISOString() });
-    if (error) toast({ title: "Error recording expense", description: error.message, variant: "destructive" });
+    const { error } = await dbUtils.rpc('record_expense', { 
+      p_amount: expenseAmount, 
+      p_vendor_id: selectedVendor || null, 
+      p_category_id: selectedCategory || null, 
+      p_comments: expenseComments, 
+      p_date_of_transaction: expenseDate?.toISOString() 
+    });
+    if (error) toast({ title: "Error recording expense", description: error, variant: "destructive" });
     else {
       toast({ title: "Success", description: "Expense recorded successfully." });
       setExpenseAmount(0);
@@ -314,14 +376,14 @@ export const Payments = () => {
       return;
     }
     setIsSubmitting(true);
-    const { error } = await supabase.from('credit').insert([{
+    const { error } = await dbUtils.insert('credit', {
       vendor_id: selectedCreditVendor,
       amount: creditAmount,
       date: creditDate?.toISOString(),
       comments: creditComments,
       status: 'pending'
-    }]);
-    if (error) toast({ title: "Error recording credit", description: error.message, variant: "destructive" });
+    });
+    if (error) toast({ title: "Error recording credit", description: error, variant: "destructive" });
     else {
       toast({ title: "Success", description: "Credit recorded successfully." });
       setCreditAmount(0);
@@ -343,13 +405,10 @@ export const Payments = () => {
   };
 
   const updateCreditStatus = async (creditId: string, newStatus: 'pending' | 'redeemed') => {
-    const { error } = await supabase
-      .from('credit')
-      .update({ status: newStatus })
-      .eq('id', creditId);
+    const { error } = await dbUtils.update('credit', { status: newStatus }, 'id = $2', [creditId]);
 
     if (error) {
-      toast({ title: "Error updating credit status", description: error.message, variant: "destructive" });
+      toast({ title: "Error updating credit status", description: error, variant: "destructive" });
     } else {
       toast({ title: "Success", description: `Credit marked as ${newStatus}.` });
       fetchData(); // This will refresh both credits and vendor balances
@@ -362,18 +421,15 @@ export const Payments = () => {
       return;
     }
     setIsSubmitting(true);
-    const { error } = await supabase
-      .from('credit')
-      .update({
+    const { error } = await dbUtils.update('credit', {
         vendor_id: selectedCreditVendor,
         amount: creditAmount,
         date: creditDate?.toISOString(),
         comments: creditComments,
-      })
-      .eq('id', editingCredit.id);
+      }, 'id = $5', [editingCredit.id]);
 
     if (error) {
-      toast({ title: "Error updating credit", description: error.message, variant: "destructive" });
+      toast({ title: "Error updating credit", description: error, variant: "destructive" });
     } else {
       toast({ title: "Success", description: "Credit updated successfully." });
       setIsEditCreditDialogOpen(false);
@@ -455,7 +511,7 @@ export const Payments = () => {
                             <div className="flex flex-col">
                               <span className="truncate">{customer.name}</span>
                               <span className="text-xs text-muted-foreground">
-                                Balance: ₹{customer.outstanding_balance?.toFixed(2) || '0.00'}
+                                Balance: ₹{fmtLocale(customer.outstanding_balance)}
                               </span>
                             </div>
                           </CommandItem>
@@ -714,7 +770,7 @@ export const Payments = () => {
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader><TableRow><TableHead>Type</TableHead><TableHead>Party</TableHead><TableHead className="hidden sm:table-cell">Details</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="hidden md:table-cell">Date</TableHead></TableRow></TableHeader>
-                  <TableBody>{transactions.map(t => (<TableRow key={t.id}><TableCell><Badge variant={t.type === 'revenue' ? 'default' : 'secondary'}>{t.type}</Badge></TableCell><TableCell className="max-w-[100px] truncate">{getPartyName(t)}</TableCell><TableCell className="hidden sm:table-cell">{getDetails(t)}</TableCell><TableCell className="text-right">Rs. {t.amount.toFixed(2)}</TableCell><TableCell className="hidden md:table-cell text-xs">{new Date(t.date_of_transaction).toLocaleDateString()}</TableCell></TableRow>))}</TableBody>
+                  <TableBody>{transactions.map(t => (<TableRow key={t.id}><TableCell><Badge variant={t.type === 'revenue' ? 'default' : 'secondary'}>{t.type}</Badge></TableCell><TableCell className="max-w-[100px] truncate">{getPartyName(t)}</TableCell><TableCell className="hidden sm:table-cell">{getDetails(t)}</TableCell><TableCell className="text-right">Rs. {fmt(t.amount)}</TableCell><TableCell className="hidden md:table-cell text-xs">{new Date(t.date_of_transaction).toLocaleDateString()}</TableCell></TableRow>))}</TableBody>
                 </Table>
               </div>
             </CardContent>
@@ -775,7 +831,7 @@ export const Payments = () => {
                   Clear
                 </Button>
               </div>
-              <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Customer</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{filteredCustomerBalances.map(c => (<TableRow key={c.id}><TableCell>{c.name}</TableCell><TableCell className="text-right">Rs. {c.outstanding_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
+              <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Customer</TableHead><TableHead className="text-right">Outstanding</TableHead></TableRow></TableHeader><TableBody>{filteredCustomerBalances.map(c => (<TableRow key={c.id}><TableCell>{c.name}</TableCell><TableCell className="text-right">Rs. {fmtLocale(c.outstanding_balance)}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
             <Card><CardHeader>
               <div className="flex justify-between items-center">
                 <CardTitle>Vendor Credit Balances</CardTitle>
@@ -829,7 +885,7 @@ export const Payments = () => {
                   Clear
                 </Button>
               </div>
-              <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead className="text-right">Credit Balance</TableHead></TableRow></TableHeader><TableBody>{filteredVendorBalances.map(v => (<TableRow key={v.id}><TableCell>{v.name}</TableCell><TableCell className="text-right">Rs. {v.credit_balance?.toFixed(2) || '0.00'}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
+              <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead className="text-right">Credit Balance</TableHead></TableRow></TableHeader><TableBody>{filteredVendorBalances.map(v => (<TableRow key={v.id}><TableCell>{v.name}</TableCell><TableCell className="text-right">Rs. {fmtLocale(v.credit_balance)}</TableCell></TableRow>))}</TableBody></Table></div></CardContent></Card>
           </div>
         </TabsContent>
         <TabsContent value="credits">
@@ -965,7 +1021,7 @@ export const Payments = () => {
                         <TableRow key={credit.id}>
                           <TableCell>{new Date(credit.date).toLocaleDateString()}</TableCell>
                           <TableCell>{credit.customers?.name || 'N/A'}</TableCell>
-                          <TableCell>₹{credit.amount.toFixed(2)}</TableCell>
+                          <TableCell>₹{fmt(credit.amount)}</TableCell>
                           <TableCell>
                             <Badge variant={credit.status === 'redeemed' ? 'default' : 'secondary'}>
                               {credit.status}

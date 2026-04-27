@@ -33,7 +33,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import { dbUtils } from "@/lib/db-utils";
 import { Plus, Edit, Filter, X, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { exportToCSV } from "@/lib/csv-export";
@@ -97,16 +97,16 @@ export const Customers = () => {
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("customers")
-      .select("*")
-      .order("name", { ascending: true });
+    const { data, error } = await dbUtils.select("customers", { 
+      orderBy: "name ASC" 
+    });
 
     if (error) {
       toast({
         title: "Error fetching customers",
-        description: error.message,
+        description: error,
         variant: "destructive",
+        duration: 3000,
       });
     } else {
       setCustomers(data as Customer[] || []);
@@ -187,14 +187,16 @@ export const Customers = () => {
     }
 
     if (editingCustomer) {
-      const { error } = await supabase
-        .from("customers")
-        .update(formData)
-        .eq("id", editingCustomer.id);
+      const { error } = await dbUtils.update(
+        "customers", 
+        formData, 
+        "id = $12", 
+        [editingCustomer.id]
+      );
       if (error) {
         toast({
           title: "Error updating customer",
-          description: error.message,
+          description: error,
           variant: "destructive",
         });
       } else {
@@ -205,11 +207,11 @@ export const Customers = () => {
         fetchCustomers();
       }
     } else {
-      const { error } = await supabase.from("customers").insert([formData]);
+      const { error } = await dbUtils.insert("customers", formData);
       if (error) {
         toast({
           title: "Error creating customer",
-          description: error.message,
+          description: error,
           variant: "destructive",
         });
       } else {

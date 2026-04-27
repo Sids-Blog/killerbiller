@@ -21,7 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/lib/supabase";
+import { signOut } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
 const allNavigation = [
@@ -72,7 +72,7 @@ export const Sidebar = ({
   }
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    signOut();
     toast({ title: "Logged out", description: "You have been successfully logged out." });
     navigate('/auth');
   };

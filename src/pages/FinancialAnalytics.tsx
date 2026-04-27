@@ -45,7 +45,8 @@ import {
     Tag,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import { n } from "@/lib/fmt";
+import { dbUtils } from "@/lib/db-utils";
 import {
     formatCurrency,
     formatPercentage,
@@ -123,10 +124,10 @@ export const FinancialAnalytics = () => {
     const fetchReferenceData = async () => {
         try {
             const [customersRes, vendorsRes, productsRes, categoriesRes] = await Promise.all([
-                supabase.from("customers").select("id, name").eq("type", "customer").eq("is_active", true),
-                supabase.from("customers").select("id, name").eq("type", "vendor").eq("is_active", true),
-                supabase.from("products").select("id, name"),
-                supabase.from("expense_categories").select("id, name"),
+                dbUtils.select("customers", { where: "type = 'customer' AND is_active = true" }),
+                dbUtils.select("customers", { where: "type = 'vendor' AND is_active = true" }),
+                dbUtils.select("products", { columns: "id, name" }),
+                dbUtils.select("expense_categories", { columns: "id, name" }),
             ]);
 
             if (customersRes.data) setCustomers(customersRes.data);
@@ -155,36 +156,42 @@ export const FinancialAnalytics = () => {
             // If product filter is selected, first get bill_ids that contain those products
             let billIdsWithProducts: string[] | null = null;
             if (selectedProducts.length > 0) {
-                const { data: billItems } = await supabase
-                    .from("bill_items")
-                    .select("bill_id")
-                    .in("product_id", selectedProducts);
+                const { data: billItems } = await dbUtils.select("bill_items", {
+                    columns: "bill_id",
+                    where: `product_id IN (${selectedProducts.map((_, i) => `$${i + 1}`).join(',')})`,
+                    params: selectedProducts
+                });
 
                 if (billItems) {
-                    billIdsWithProducts = [...new Set(billItems.map(item => item.bill_id))];
+                    billIdsWithProducts = [...new Set(billItems.map((item: any) => item.bill_id))];
                 }
             }
 
             // Fetch transactions
-            let query = supabase
-                .from("transactions")
-                .select("*")
-                .gte("date_of_transaction", start.toISOString())
-                .lte("date_of_transaction", end.toISOString())
-                .order("date_of_transaction", { ascending: false });
+            let query = `
+              SELECT * FROM transactions
+              WHERE date_of_transaction >= $1 AND date_of_transaction <= $2
+            `;
+            const params: any[] = [start.toISOString(), end.toISOString()];
+            let paramIndex = 3;
 
             if (selectedVendors.length > 0) {
-                query = query.in("vendor_id", selectedVendors);
+              query += ` AND vendor_id IN (${selectedVendors.map((_, i) => `$${paramIndex++}`).join(',')})`;
+              params.push(...selectedVendors);
             }
             if (selectedCustomers.length > 0) {
-                query = query.in("customer_id", selectedCustomers);
+              query += ` AND customer_id IN (${selectedCustomers.map((_, i) => `$${paramIndex++}`).join(',')})`;
+              params.push(...selectedCustomers);
             }
             if (selectedCategories.length > 0) {
-                query = query.in("category_id", selectedCategories);
+              query += ` AND category_id IN (${selectedCategories.map((_, i) => `$${paramIndex++}`).join(',')})`;
+              params.push(...selectedCategories);
             }
+            
             // Filter by bill_ids if product filter is active
             if (billIdsWithProducts && billIdsWithProducts.length > 0) {
-                query = query.in("bill_id", billIdsWithProducts);
+              query += ` AND bill_id IN (${billIdsWithProducts.map((_, i) => `$${paramIndex++}`).join(',')})`;
+              params.push(...billIdsWithProducts);
             } else if (selectedProducts.length > 0 && (!billIdsWithProducts || billIdsWithProducts.length === 0)) {
                 // If product filter is active but no bills found, return empty results
                 setTransactions([]);
@@ -201,32 +208,34 @@ export const FinancialAnalytics = () => {
                 return;
             }
 
-            const { data: transactionsData, error: transactionsError } = await query;
+            query += ` ORDER BY date_of_transaction DESC`;
 
-            if (transactionsError) throw transactionsError;
+            const { data: transactionsData, error: transactionsError } = await dbUtils.execute(query, params);
+
+            if (transactionsError) throw new Error(transactionsError);
 
             setTransactions(transactionsData || []);
 
             // Calculate stats
             const revenue = (transactionsData || [])
-                .filter((t) => t.type === "revenue")
-                .reduce((sum, t) => sum + t.amount, 0);
+                .filter((t: any) => t.type === "revenue")
+                .reduce((sum: number, t: any) => sum + t.amount, 0);
 
             const expenses = (transactionsData || [])
-                .filter((t) => t.type === "expense")
-                .reduce((sum, t) => sum + t.amount, 0);
+                .filter((t: any) => t.type === "expense")
+                .reduce((sum: number, t: any) => sum + t.amount, 0);
 
             const netProfit = revenue - expenses;
             const profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
 
             // Get outstanding receivables
-            const { data: billsData } = await supabase
-                .from("bills")
-                .select("total_amount, paid_amount")
-                .in("status", ["outstanding", "partial"]);
+            const { data: billsData } = await dbUtils.select("bills", {
+              columns: "total_amount, paid_amount",
+              where: "status IN ('outstanding', 'partial')"
+            });
 
             const outstandingReceivables = (billsData || []).reduce(
-                (sum, bill) => sum + (bill.total_amount - bill.paid_amount),
+                (sum: number, bill: any) => sum + (n(bill.total_amount) - n(bill.paid_amount)),
                 0
             );
 
@@ -242,11 +251,11 @@ export const FinancialAnalytics = () => {
             // Generate monthly data
             const monthly = groupTransactionsByMonth(transactionsData || []);
             setMonthlyData(monthly);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error fetching analytics data:", error);
             toast({
                 title: "Error",
-                description: "Failed to fetch analytics data",
+                description: error.message || "Failed to fetch analytics data",
                 variant: "destructive",
             });
         } finally {

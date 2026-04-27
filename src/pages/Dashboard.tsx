@@ -22,7 +22,8 @@ import {
   DollarSign
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import { n, fmt, fmtLocale } from "@/lib/fmt";
+import { dbUtils } from "@/lib/db-utils";
 
 interface Product {
   id: string;
@@ -61,46 +62,51 @@ export const Dashboard = () => {
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
     
-    const statsPromise = supabase.rpc('get_dashboard_stats');
-    const extendedStatsPromise = supabase.rpc('get_extended_dashboard_stats');
-    const productPromise = supabase.from("products").select("*");
-    const inventoryPromise = supabase.from("inventory").select("product_id, quantity");
-    const customerPromise = supabase
-      .from("customers")
-      .select("id, name, outstanding_balance")
-      .gt("outstanding_balance", 0)
-      .order("outstanding_balance", { ascending: false });
+    const statsPromise = dbUtils.rpc('get_dashboard_stats');
+    const extendedStatsPromise = dbUtils.rpc('get_extended_dashboard_stats');
+    const productWithInventoryPromise = dbUtils.execute(`
+      SELECT p.*, COALESCE(i.quantity, 0) as current_stock
+      FROM products p
+      LEFT JOIN inventory i ON p.id = i.product_id
+    `);
+    const customerPromise = dbUtils.select("customers", {
+      where: "outstanding_balance > 0",
+      orderBy: "outstanding_balance DESC"
+    });
 
-    const [statsRes, extendedStatsRes, productRes, inventoryRes, customerRes] = await Promise.all([
+    const [statsRes, extendedStatsRes, productRes, customerRes] = await Promise.all([
       statsPromise,
       extendedStatsPromise,
-      productPromise,
-      inventoryPromise,
+      productWithInventoryPromise,
       customerPromise,
     ]);
 
     if (statsRes.error || extendedStatsRes.error) {
-      toast({ title: "Error fetching dashboard stats", description: statsRes.error?.message || extendedStatsRes.error?.message, variant: "destructive" });
+      toast({ 
+        title: "Error fetching dashboard stats", 
+        description: statsRes.error || extendedStatsRes.error, 
+        variant: "destructive" 
+      });
     } else {
       setStats({ ...statsRes.data[0], ...extendedStatsRes.data[0] });
     }
 
     if (productRes.error) {
-      toast({ title: "Error fetching products", description: productRes.error.message, variant: "destructive" });
-    } else if (inventoryRes.error) {
-      toast({ title: "Error fetching inventory", description: inventoryRes.error.message, variant: "destructive" });
-    }
-    else {
-      const inventoryMap = new Map(inventoryRes.data.map(item => [item.product_id, item.quantity]));
-      const productsWithStock = productRes.data.map(product => ({
-        ...product,
-        current_stock: inventoryMap.get(product.id) || 0,
-      }));
-      setProducts(productsWithStock);
+      toast({ 
+        title: "Error fetching products", 
+        description: productRes.error, 
+        variant: "destructive" 
+      });
+    } else {
+      setProducts(productRes.data as Product[]);
     }
 
     if (customerRes.error) {
-      toast({ title: "Error fetching customers", description: customerRes.error.message, variant: "destructive" });
+      toast({ 
+        title: "Error fetching customers", 
+        description: customerRes.error, 
+        variant: "destructive" 
+      });
     } else {
       setCustomers(customerRes.data || []);
     }
@@ -293,7 +299,7 @@ export const Dashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {products.map(product => {
             const quantity = product.current_stock;
-            const lots = product.lot_size > 0 ? (quantity / product.lot_size).toFixed(1) : 0;
+            const lots = n(product.lot_size) > 0 ? (n(quantity) / n(product.lot_size)).toFixed(1) : 0;
             const status = quantity === 0 ? "destructive" : quantity <= product.min_stock ? "warning" : "default";
             return (
               <Card key={product.id}>
@@ -315,7 +321,7 @@ export const Dashboard = () => {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">Inventory Value:</span>
-                    <span className="font-semibold">₹{(quantity * product.price).toLocaleString()}</span>
+                    <span className="font-semibold">₹{fmtLocale(n(quantity) * n(product.price))}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -339,7 +345,7 @@ export const Dashboard = () => {
               {customers.map(customer => (
                 <TableRow key={customer.id}>
                   <TableCell>{customer.name}</TableCell>
-                  <TableCell className="text-right font-semibold">₹{customer.outstanding_balance.toLocaleString()}</TableCell>
+                  <TableCell className="text-right font-semibold">₹{fmtLocale(customer.outstanding_balance)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

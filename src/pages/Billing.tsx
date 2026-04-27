@@ -43,7 +43,8 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import { n, fmt } from "@/lib/fmt";
+import { dbUtils } from "@/lib/db-utils";
 import {
   Popover,
   PopoverContent,
@@ -156,14 +157,14 @@ export const Billing = () => {
     if (!billToDelete) return;
     setLoading(true);
 
-    const { error } = await supabase.rpc("delete_bill", {
+    const { error } = await dbUtils.rpc("delete_bill", {
       p_bill_id: billToDelete,
     });
 
     if (error) {
       toast({
         title: "Error deleting bill",
-        description: error.message,
+        description: error,
         variant: "destructive",
       });
     } else {
@@ -177,25 +178,26 @@ export const Billing = () => {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const customerPromise = supabase
-      .from("customers")
-      .select("*")
-      .eq("is_active", true)
-      .eq("type", "customer");
-    const productPromise = supabase
-      .from("products")
-      .select("*, inventory(quantity)");
-    const billsPromise = supabase
-      .from("bills")
-      .select(
-        "id, invoice_number, created_at, date_of_bill, total_amount, status, is_gst_bill, customers ( name )"
-      )
-      .order("date_of_bill", { ascending: false });
-    const sellerInfoPromise = supabase
-      .from("seller_info")
-      .select("*")
-      .limit(1)
-      .maybeSingle();
+    
+    const customerPromise = dbUtils.select("customers", {
+      where: "is_active = true AND type = 'customer'",
+    });
+
+    const productPromise = dbUtils.execute(`
+      SELECT p.*, i.quantity
+      FROM products p
+      LEFT JOIN inventory i ON p.id = i.product_id
+    `);
+
+    const billsPromise = dbUtils.execute(`
+      SELECT b.id, b.invoice_number, b.created_at, b.date_of_bill, b.total_amount, b.status, b.is_gst_bill,
+             json_build_object('name', c.name) as customers
+      FROM bills b
+      LEFT JOIN customers c ON b.customer_id = c.id
+      ORDER BY b.date_of_bill DESC
+    `);
+
+    const sellerInfoPromise = dbUtils.select("seller_info");
 
     const [customerRes, productRes, billsRes, sellerInfoRes] = await Promise.all([
       customerPromise,
@@ -207,7 +209,7 @@ export const Billing = () => {
     if (customerRes.error)
       toast({
         title: "Error fetching customers",
-        description: customerRes.error.message,
+        description: customerRes.error,
         variant: "destructive",
       });
     else setCustomers(customerRes.data || []);
@@ -215,35 +217,36 @@ export const Billing = () => {
     if (productRes.error)
       toast({
         title: "Error fetching products",
-        description: productRes.error.message,
+        description: productRes.error,
         variant: "destructive",
       });
-    else setProducts(productRes.data || []);
+    else {
+      // Format product data to include inventory structure if needed
+      const formattedProducts = (productRes.data as any[]).map(p => ({
+        ...p,
+        inventory: { quantity: p.quantity ?? 0 }
+      }));
+      setProducts(formattedProducts as Product[]);
+    }
 
     if (billsRes.error)
       toast({
         title: "Error fetching bills",
-        description: billsRes.error.message,
+        description: billsRes.error,
         variant: "destructive",
       });
     else {
-      const transformedData = (billsRes.data || []).map((bill) => ({
-        ...bill,
-        customers: Array.isArray(bill.customers)
-          ? bill.customers[0] || null
-          : bill.customers,
-      }));
-      setBills(transformedData as unknown as Bill[]);
-      setFilteredBills(transformedData as unknown as Bill[]);
+      setBills(billsRes.data as unknown as Bill[]);
+      setFilteredBills(billsRes.data as unknown as Bill[]);
     }
 
     if (sellerInfoRes.error)
       toast({
         title: "Error fetching seller info",
-        description: sellerInfoRes.error.message,
+        description: sellerInfoRes.error,
         variant: "destructive",
       });
-    else setSellerInfo(sellerInfoRes.data);
+    else setSellerInfo(sellerInfoRes.data?.[0] || null);
 
     setLoading(false);
   }, [toast]);
@@ -930,40 +933,42 @@ export const Billing = () => {
 
   const handleDownloadPdf = async (billId: string) => {
     setLoading(true);
-    const { data: billDetails, error: billError } = await supabase
-      .from("bills")
-      .select("*, customers(*)")
-      .eq("id", billId)
-      .single();
+    const { data: billRes, error: billError } = await dbUtils.execute(`
+      SELECT b.*, json_build_object('id', c.id, 'name', c.name, 'address', c.address, 'primary_phone_number', c.primary_phone_number, 'gst_number', c.gst_number) as customers
+      FROM bills b
+      LEFT JOIN customers c ON b.customer_id = c.id
+      WHERE b.id = $1
+    `, [billId]);
 
-    if (billError || !billDetails) {
+    if (billError || !billRes?.[0]) {
       toast({
         title: "Error fetching bill details",
-        description: billError?.message,
+        description: billError,
         variant: "destructive",
       });
       setLoading(false);
       return;
     }
+    const billDetails = billRes[0];
 
-    const { data: billItemsData, error: itemsError } = await supabase
-      .from("bill_items")
-      .select("*, products(name)")
-      .eq("bill_id", billId);
+    const { data: billItemsData, error: itemsError } = await dbUtils.execute(`
+      SELECT bi.*, p.name as product_name
+      FROM bill_items bi
+      JOIN products p ON bi.product_id = p.id
+      WHERE bi.bill_id = $1
+    `, [billId]);
 
     if (itemsError || !billItemsData) {
       toast({
         title: "Error fetching bill items",
-        description: itemsError?.message,
+        description: itemsError,
         variant: "destructive",
       });
       setLoading(false);
       return;
     }
 
-    const customer = Array.isArray(billDetails.customers)
-      ? billDetails.customers[0]
-      : billDetails.customers;
+    const customer = billDetails.customers;
 
     if (!customer) {
       toast({
@@ -975,15 +980,10 @@ export const Billing = () => {
       return;
     }
 
-    const itemsForPdf: BillItem[] = billItemsData.map(
-      (item: {
-        product_id: string;
-        products: { name: string };
-        quantity: number;
-        price: number;
-      }) => ({
+    const itemsForPdf: BillItem[] = (billItemsData as any[]).map(
+      (item: any) => ({
         product_id: item.product_id,
-        product_name: item.products?.name || "Unknown Product",
+        product_name: item.product_name || "Unknown Product",
         quantity: item.quantity,
         price: item.price,
         master_lot_size: 0,
@@ -992,47 +992,48 @@ export const Billing = () => {
       })
     );
 
-    //generatePdf(billDetails, itemsForPdf, customer);
     previewInvoice(billDetails, itemsForPdf, customer);
     setLoading(false);
   };
 
   const handleDownloadReceipt = async (billId: string) => {
     setLoading(true);
-    const { data: billDetails, error: billError } = await supabase
-      .from("bills")
-      .select("*, customers(*)")
-      .eq("id", billId)
-      .single();
+    const { data: billRes, error: billError } = await dbUtils.execute(`
+      SELECT b.*, json_build_object('id', c.id, 'name', c.name, 'address', c.address, 'primary_phone_number', c.primary_phone_number, 'gst_number', c.gst_number) as customers
+      FROM bills b
+      LEFT JOIN customers c ON b.customer_id = c.id
+      WHERE b.id = $1
+    `, [billId]);
 
-    if (billError || !billDetails) {
+    if (billError || !billRes?.[0]) {
       toast({
         title: "Error fetching bill details",
-        description: billError?.message,
+        description: billError,
         variant: "destructive",
       });
       setLoading(false);
       return;
     }
+    const billDetails = billRes[0];
 
-    const { data: billItemsData, error: itemsError } = await supabase
-      .from("bill_items")
-      .select("*, products(name)")
-      .eq("bill_id", billId);
+    const { data: billItemsData, error: itemsError } = await dbUtils.execute(`
+      SELECT bi.*, p.name as product_name
+      FROM bill_items bi
+      JOIN products p ON bi.product_id = p.id
+      WHERE bi.bill_id = $1
+    `, [billId]);
 
     if (itemsError || !billItemsData) {
       toast({
         title: "Error fetching bill items",
-        description: itemsError?.message,
+        description: itemsError,
         variant: "destructive",
       });
       setLoading(false);
       return;
     }
 
-    const customer = Array.isArray(billDetails.customers)
-      ? billDetails.customers[0]
-      : billDetails.customers;
+    const customer = billDetails.customers;
 
     if (!customer) {
       toast({
@@ -1044,15 +1045,10 @@ export const Billing = () => {
       return;
     }
 
-    const itemsForPdf: BillItem[] = billItemsData.map(
-      (item: {
-        product_id: string;
-        products: { name: string };
-        quantity: number;
-        price: number;
-      }) => ({
+    const itemsForPdf: BillItem[] = (billItemsData as any[]).map(
+      (item: any) => ({
         product_id: item.product_id,
-        product_name: item.products?.name || "Unknown Product",
+        product_name: item.product_name || "Unknown Product",
         quantity: item.quantity,
         price: item.price,
         master_lot_size: 0,
@@ -1091,28 +1087,26 @@ export const Billing = () => {
 
     const { grandTotal, sgst, cgst, cess } = billCalculations;
 
-    const { data: bill, error: billError } = await supabase
-      .from("bills")
-      .insert({
-        customer_id: selectedCustomer,
-        total_amount: grandTotal,
-        status: "outstanding",
-        discount: discount,
-        comments: comments,
-        date_of_bill: billDate?.toISOString(),
-        is_gst_bill: isGstBill,
-        sgst_percentage: isGstBill ? sgstPercent : null,
-        cgst_percentage: isGstBill ? cgstPercent : null,
-        cess_percentage: isGstBill ? cessPercent : null,
-        gst_amount: sgst + cgst + cess,
-      })
-      .select()
-      .single();
+    const { data: billData, error: billError } = await dbUtils.insert("bills", {
+      customer_id: selectedCustomer,
+      total_amount: grandTotal,
+      status: "outstanding",
+      discount: discount,
+      comments: comments,
+      date_of_bill: billDate?.toISOString(),
+      is_gst_bill: isGstBill,
+      sgst_percentage: isGstBill ? sgstPercent : null,
+      cgst_percentage: isGstBill ? cgstPercent : null,
+      cess_percentage: isGstBill ? cessPercent : null,
+      gst_amount: sgst + cgst + cess,
+    });
+
+    const bill = billData?.[0];
 
     if (billError || !bill) {
       toast({
         title: "Error creating bill",
-        description: billError?.message,
+        description: billError,
         variant: "destructive",
       });
       return;
@@ -1125,51 +1119,53 @@ export const Billing = () => {
       price: item.price,
     }));
 
-    const { error: itemsError } = await supabase
-      .from("bill_items")
-      .insert(itemsToInsert);
-    if (itemsError) {
-      toast({
-        title: "Error adding bill items",
-        description: itemsError.message,
-        variant: "destructive",
-      });
-      return;
+    for (const item of itemsToInsert) {
+      const { error: itemError } = await dbUtils.insert("bill_items", item);
+      if (itemError) {
+        toast({
+          title: "Error adding bill items",
+          description: itemError,
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     for (const item of billItems) {
-      const { error: stockError } = await supabase.rpc("decrement_stock", {
+      const { error: stockError } = await dbUtils.rpc("decrement_stock", {
         p_product_id: item.product_id,
         p_quantity: item.quantity,
       });
       if (stockError)
         toast({
           title: "Error updating stock",
-          description: stockError.message,
+          description: stockError,
           variant: "destructive",
         });
     }
 
-    const { error: customerError } = await supabase.rpc(
+    const { error: customerError } = await dbUtils.rpc(
       "update_customer_balance",
       { p_customer_id: selectedCustomer, p_amount: grandTotal }
     );
     if (customerError)
       toast({
         title: "Error updating customer balance",
-        description: customerError.message,
+        description: customerError,
         variant: "destructive",
       });
 
     if (orderId) {
-      const { error: orderUpdateError } = await supabase
-        .from("orders")
-        .update({ status: "fulfilled" })
-        .eq("id", orderId);
+      const { error: orderUpdateError } = await dbUtils.update(
+        "orders", 
+        { status: "fulfilled" }, 
+        "id = $2", 
+        [orderId]
+      );
       if (orderUpdateError)
         toast({
           title: "Error updating order status",
-          description: orderUpdateError.message,
+          description: orderUpdateError,
           variant: "destructive",
         });
     }
@@ -1372,7 +1368,7 @@ export const Billing = () => {
                                     </span>
                                     <span className="text-xs text-muted-foreground">
                                       Stock: {product.inventory?.quantity ?? 0}{" "}
-                                      | Price: ₹{product.price.toFixed(2)}
+                                      | Price: ₹{fmt(product.price)}
                                     </span>
                                   </div>
                                 </CommandItem>
@@ -1457,7 +1453,7 @@ export const Billing = () => {
                           </div>
                         </div>
                         <div className="text-right font-medium">
-                          Total: ₹{(item.quantity * item.price).toFixed(2)}
+                          Total: ₹{fmt(n(item.quantity) * n(item.price))}
                         </div>
                       </CardContent>
                     </Card>
@@ -1543,7 +1539,7 @@ export const Billing = () => {
                                 />
                               </TableCell>
                               <TableCell>
-                                ₹{(item.quantity * item.price).toFixed(2)}
+                                ₹{fmt(n(item.quantity) * n(item.price))}
                               </TableCell>
                               <TableCell>
                                 <Button
@@ -1618,28 +1614,28 @@ export const Billing = () => {
                     />
                   </div>
                   <div className="text-right space-y-1">
-                    <p>Subtotal: ₹{billCalculations.taxableValue.toFixed(2)}</p>
+                    <p>Subtotal: ₹{fmt(billCalculations.taxableValue)}</p>
                     {isGstBill && (
                       <>
                         <p>
                           SGST ({sgstPercent}%): ₹
-                          {billCalculations.sgst.toFixed(2)}
+                          {fmt(billCalculations.sgst)}
                         </p>
                         <p>
                           CGST ({cgstPercent}%): ₹
-                          {billCalculations.cgst.toFixed(2)}
+                          {fmt(billCalculations.cgst)}
                         </p>
                         {cessPercent > 0 && (
                           <p>
                             CESS ({cessPercent}%): ₹
-                            {billCalculations.cess.toFixed(2)}
+                            {fmt(billCalculations.cess)}
                           </p>
                         )}
                       </>
                     )}
-                    <p>Discount: - ₹{discount.toFixed(2)}</p>
+                    <p>Discount: - ₹{fmt(billCalculations.discount ?? 0)}</p>
                     <p className="font-bold text-lg">
-                      Grand Total: ₹{billCalculations.grandTotal.toFixed(2)}
+                      Grand Total: ₹{fmt(billCalculations.grandTotal)}
                     </p>
                   </div>
                 </div>
@@ -1821,7 +1817,7 @@ export const Billing = () => {
                         <div className="flex justify-between text-sm">
                           <span>Amount:</span>
                           <span className="font-bold">
-                            ₹{bill.total_amount.toFixed(2)}
+                            ₹{fmt(bill.total_amount)}
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
@@ -1897,7 +1893,7 @@ export const Billing = () => {
                           <TableCell>
                             {new Date(bill.date_of_bill).toLocaleDateString()}
                           </TableCell>
-                          <TableCell>₹{bill.total_amount.toFixed(2)}</TableCell>
+                          <TableCell>₹{fmt(bill.total_amount)}</TableCell>
                           <TableCell>
                             <Badge
                               variant={

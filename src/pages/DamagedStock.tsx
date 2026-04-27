@@ -26,7 +26,8 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import { fmt } from "@/lib/fmt";
+import { dbUtils } from "@/lib/db-utils";
 import { Plus, Calendar as CalendarIcon, Filter, X, Edit, Check, ChevronsUpDown, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -107,13 +108,18 @@ export const DamagedStock = () => {
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("damaged_stock_log")
-      .select("*, products(name), customers(name)")
-      .order("created_at", { ascending: false });
+    const { data, error } = await dbUtils.execute(`
+      SELECT dsl.*, 
+             json_build_object('name', p.name) as products,
+             json_build_object('name', v.name) as customers
+      FROM damaged_stock_log dsl
+      JOIN products p ON dsl.product_id = p.id
+      JOIN customers v ON dsl.vendor_id = v.id
+      ORDER BY dsl.created_at DESC
+    `);
 
     if (error) {
-      toast({ title: "Error fetching logs", description: error.message, variant: "destructive" });
+      toast({ title: "Error fetching logs", description: error, variant: "destructive" });
     } else {
       setLogs(data as DamagedStockLog[]);
       setFilteredLogs(data as DamagedStockLog[]);
@@ -122,23 +128,22 @@ export const DamagedStock = () => {
   }, [toast]);
 
   const fetchProducts = useCallback(async () => {
-    const { data, error } = await supabase.from("products").select("id, name");
+    const { data, error } = await dbUtils.select("products", { columns: "id, name" });
     if (error) {
-      toast({ title: "Error fetching products", description: error.message, variant: "destructive" });
+      toast({ title: "Error fetching products", description: error, variant: "destructive" });
     } else {
       setProducts(data || []);
     }
   }, [toast]);
 
   const fetchVendors = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("customers")
-      .select("id, name")
-      .eq("type", "vendor")
-      .eq("is_active", true)
-      .order("name");
+    const { data, error } = await dbUtils.select("customers", {
+      columns: "id, name",
+      where: "type = 'vendor' AND is_active = true",
+      orderBy: "name ASC"
+    });
     if (error) {
-      toast({ title: "Error fetching vendors", description: error.message, variant: "destructive" });
+      toast({ title: "Error fetching vendors", description: error, variant: "destructive" });
     } else {
       setVendors(data || []);
     }
@@ -175,15 +180,13 @@ export const DamagedStock = () => {
 
     const totalValue = formData.quantity * formData.unit_cost;
     
-    const { error: logError } = await supabase.from("damaged_stock_log").insert([
-      {
-        product_id: formData.product_id,
-        vendor_id: formData.vendor_id,
-        quantity: formData.quantity,
-        unit_cost: formData.unit_cost,
-        reason: formData.reason,
-      },
-    ]);
+    const { error: logError } = await dbUtils.insert("damaged_stock_log", {
+      product_id: formData.product_id,
+      vendor_id: formData.vendor_id,
+      quantity: formData.quantity,
+      unit_cost: formData.unit_cost,
+      reason: formData.reason,
+    });
 
     if (logError) {
       toast({ title: "Error creating log", description: logError.message, variant: "destructive" });
@@ -194,27 +197,25 @@ export const DamagedStock = () => {
     const productName = products.find(p => p.id === formData.product_id)?.name || 'Unknown Product';
     const creditComments = `Credit for damaged stock: ${productName} (Qty: ${formData.quantity}, Reason: ${formData.reason || 'Not specified'})`;
     
-    const { error: creditError } = await supabase.from("credit").insert([
-      {
-        vendor_id: formData.vendor_id,
-        amount: totalValue,
-        date: new Date().toISOString(),
-        comments: creditComments,
-        status: 'pending'
-      },
-    ]);
+    const { error: creditError } = await dbUtils.insert("credit", {
+      vendor_id: formData.vendor_id,
+      amount: totalValue,
+      date: new Date().toISOString(),
+      comments: creditComments,
+      status: 'pending'
+    });
 
     if (creditError) {
       toast({ title: "Warning", description: "Damaged stock logged but failed to create credit record.", variant: "destructive" });
     }
 
-    const { error: stockError } = await supabase.rpc("decrement_stock_from_damage", {
+    const { error: stockError } = await dbUtils.rpc("decrement_stock_from_damage", {
       p_product_id: formData.product_id,
       p_quantity: formData.quantity,
     });
 
     if (stockError) {
-      toast({ title: "Error updating stock", description: stockError.message, variant: "destructive" });
+      toast({ title: "Error updating stock", description: stockError, variant: "destructive" });
     } else {
       const creditMessage = creditError ? " Credit record creation failed." : " Credit record created automatically.";
       toast({ title: "Success", description: `Damaged stock logged successfully.${creditMessage}` });
@@ -249,16 +250,13 @@ export const DamagedStock = () => {
     // Calculate stock difference
     const quantityDiff = editFormData.quantity - editingLog.quantity;
 
-    const { error: updateError } = await supabase
-      .from("damaged_stock_log")
-      .update({
+    const { error: updateError } = await dbUtils.update("damaged_stock_log", {
         product_id: editFormData.product_id,
         vendor_id: editFormData.vendor_id,
         quantity: editFormData.quantity,
         unit_cost: editFormData.unit_cost,
         reason: editFormData.reason,
-      })
-      .eq("id", editingLog.id);
+      }, "id = $6", [editingLog.id]);
 
     if (updateError) {
       toast({ title: "Error updating log", description: updateError.message, variant: "destructive" });
@@ -267,13 +265,13 @@ export const DamagedStock = () => {
 
     // Adjust stock if quantity changed
     if (quantityDiff !== 0) {
-      const { error: stockError } = await supabase.rpc("decrement_stock_from_damage", {
+      const { error: stockError } = await dbUtils.rpc("decrement_stock_from_damage", {
         p_product_id: editFormData.product_id,
         p_quantity: quantityDiff,
       });
 
       if (stockError) {
-        toast({ title: "Error updating stock", description: stockError.message, variant: "destructive" });
+        toast({ title: "Error updating stock", description: stockError, variant: "destructive" });
       }
     }
 
@@ -286,10 +284,7 @@ export const DamagedStock = () => {
   };
   
   const handleStatusChange = async (id: string, newStatus: 'PENDING_ADJUSTMENT' | 'ADJUSTED') => {
-    const { error } = await supabase
-      .from('damaged_stock_log')
-      .update({ status: newStatus })
-      .eq('id', id);
+    const { error } = await dbUtils.update('damaged_stock_log', { status: newStatus }, 'id = $2', [id]);
 
     if (error) {
       toast({ title: 'Error updating status', description: error.message, variant: 'destructive' });
@@ -394,11 +389,11 @@ export const DamagedStock = () => {
             </div>
             <div>
               <p className="text-muted-foreground">Unit Cost</p>
-              <p className="font-medium">₹{log.unit_cost.toFixed(2)}</p>
+              <p className="font-medium">₹{fmt(log.unit_cost)}</p>
             </div>
             <div>
               <p className="text-muted-foreground">Total Value</p>
-              <p className="font-medium">₹{log.total_value.toFixed(2)}</p>
+              <p className="font-medium">₹{fmt(log.total_value)}</p>
             </div>
             <div>
               <p className="text-muted-foreground">Vendor</p>
@@ -862,8 +857,8 @@ export const DamagedStock = () => {
                       <TableCell className="font-medium">{log.customers?.name || 'Unknown Vendor'}</TableCell>
                       <TableCell>{new Date(log.created_at).toLocaleDateString()}</TableCell>
                       <TableCell>{log.quantity}</TableCell>
-                      <TableCell>₹{log.unit_cost.toFixed(2)}</TableCell>
-                      <TableCell>₹{log.total_value.toFixed(2)}</TableCell>
+                      <TableCell>₹{fmt(log.unit_cost)}</TableCell>
+                      <TableCell>₹{fmt(log.total_value)}</TableCell>
                       <TableCell className="max-w-xs truncate">{log.reason}</TableCell>
                       <TableCell>
                         <Badge variant={log.status === 'ADJUSTED' ? 'default' : 'destructive'}>
